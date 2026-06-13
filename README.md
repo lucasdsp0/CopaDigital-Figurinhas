@@ -4,7 +4,7 @@
 
 ---
 
-# ⚽ FigurinhasCopa Digital 🃏
+# ⚽ CopaDigital - Figurinhas 🃏
 
 > [!NOTE]
 > Plataforma B2C de colecionamento e troca de figurinhas digitais da Copa do Mundo. Compre pacotes, descubra figurinhas raras e lendárias, complete seu álbum virtual e negocie repetidas com outros colecionadores em um marketplace integrado.
@@ -13,14 +13,14 @@
   <tr>
     <td width="800px">
       <div align="justify">
-        O <b>FigurinhasCopa Digital</b> reimagina a tradição centenária de colecionar figurinhas da Copa do Mundo em formato 100% digital. A plataforma permite que fãs de todo o Brasil comprem pacotes de figurinhas digitais, descubram cartas com diferentes raridades — Comum, Rara, Lendária e Brilhante — colem no álbum virtual e participem de um <i>marketplace</i> onde podem trocar ou vender figurinhas repetidas para outros colecionadores. Com sistema de <b>ranking</b>, <b>conquistas desbloqueáveis</b> e <b>notificações em tempo real</b> via WebSocket, o FigurinhasCopa Digital oferece uma experiência social e competitiva que vai muito além do simples colecionamento. O projeto foi desenvolvido como trabalho acadêmico na disciplina de <b>Projeto de Software</b> da PUC Minas, modelando uma aplicação B2C completa com arquitetura de microsserviços sobre infraestrutura AWS.
+        O <b>CopaDigital - Figurinhas</b> reimagina a tradição centenária de colecionar figurinhas da Copa do Mundo em formato 100% digital. A plataforma permite que fãs de todo o Brasil comprem pacotes de figurinhas digitais, descubram cartas com diferentes raridades — Comum, Rara, Lendária e Brilhante — colem no álbum virtual e participem de um <i>marketplace</i> onde podem trocar ou vender figurinhas repetidas para outros colecionadores. Com sistema de <b>ranking</b>, <b>conquistas desbloqueáveis</b> e <b>notificações em tempo real</b> via WebSocket, o FigurinhasCopa Digital oferece uma experiência social e competitiva que vai muito além do simples colecionamento. O projeto foi desenvolvido como trabalho acadêmico na disciplina de <b>Projeto de Software</b> da PUC Minas, modelando uma aplicação B2C completa com arquitetura de microsserviços sobre infraestrutura AWS.
       </div>
     </td>
     <td>
       <div align="center">
         ⚽🃏
         <br/>
-        <b>FigurinhasCopa</b>
+        <b>CopaDigital</b>
         <br/>
         <i>Digital</i>
       </div>
