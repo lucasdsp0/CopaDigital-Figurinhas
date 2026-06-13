@@ -1,0 +1,205 @@
+@startuml DAT01-modelo-dados
+title Modelo de Dados (ER Simplificado)\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam entity {
+  BackgroundColor #EBF5FB
+  BorderColor #2980B9
+  FontSize 12
+}
+skinparam linetype ortho
+
+entity "usuarios" as US {
+  * id : UUID <<PK>>
+  --
+  * nome : VARCHAR(100)
+  * email : VARCHAR(150) <<UNIQUE>>
+  * senha_hash : VARCHAR(255)
+  data_nascimento : DATE
+  foto_perfil : TEXT
+  bio : VARCHAR(500)
+  * status : ENUM
+  ultimo_login : TIMESTAMP
+  suspenso_ate : TIMESTAMP
+  * criado_em : TIMESTAMP
+  * ativo : BOOLEAN
+}
+
+entity "selecoes" as SEL {
+  * id : UUID <<PK>>
+  --
+  * nome : VARCHAR(100)
+  * pais : VARCHAR(50)
+  bandeira_url : TEXT
+  * grupo : VARCHAR(2)
+  fase_atual : VARCHAR(50)
+}
+
+entity "jogadores" as JOG {
+  * id : UUID <<PK>>
+  --
+  * nome : VARCHAR(100)
+  * selecao_id : UUID <<FK>>
+  * posicao : ENUM
+  clube : VARCHAR(100)
+  gols_copa : INTEGER DEFAULT 0
+  assistencias : INTEGER DEFAULT 0
+  jogos : INTEGER DEFAULT 0
+  media_nota : DECIMAL(3,1)
+}
+
+entity "figurinhas" as FIG {
+  * id : UUID <<PK>>
+  --
+  * numero : INTEGER
+  * nome : VARCHAR(100)
+  * raridade : ENUM
+  * tipo : ENUM
+  * imagem_url : TEXT
+  jogador_id : UUID <<FK>>
+  * ativo : BOOLEAN DEFAULT true
+  * criado_em : TIMESTAMP
+}
+
+entity "usuario_figurinhas" as UF {
+  * id : UUID <<PK>>
+  --
+  * usuario_id : UUID <<FK>>
+  * figurinha_id : UUID <<FK>>
+  * quantidade : INTEGER DEFAULT 0
+  * colada : BOOLEAN DEFAULT false
+  * reservada : INTEGER DEFAULT 0
+  colada_em : TIMESTAMP
+  adquirida_em : TIMESTAMP
+}
+
+entity "pedidos" as PED {
+  * id : UUID <<PK>>
+  --
+  * usuario_id : UUID <<FK>>
+  * valor : DECIMAL(10,2)
+  * status : ENUM
+  * metodo_pagamento : VARCHAR(50)
+  transacao_id : VARCHAR(100)
+  * criado_em : TIMESTAMP
+}
+
+entity "pacotes_usuario" as PAC {
+  * id : UUID <<PK>>
+  --
+  * usuario_id : UUID <<FK>>
+  * pedido_id : UUID <<FK>>
+  * tipo : ENUM
+  * status : ENUM DEFAULT 'nao_aberto'
+  aberto_em : TIMESTAMP
+  * criado_em : TIMESTAMP
+}
+
+entity "ofertas_marketplace" as OFM {
+  * id : UUID <<PK>>
+  --
+  * vendedor_id : UUID <<FK>>
+  * figurinha_id : UUID <<FK>>
+  preco : DECIMAL(10,2)
+  * quantidade : INTEGER DEFAULT 1
+  * tipo : ENUM
+  * status : ENUM DEFAULT 'ativa'
+  * criado_em : TIMESTAMP
+  expiracao_em : TIMESTAMP
+}
+
+entity "propostas_troca" as PT {
+  * id : UUID <<PK>>
+  --
+  * proponente_id : UUID <<FK>>
+  * oferta_id : UUID <<FK>>
+  * figurinha_ofertada_id : UUID <<FK>>
+  * status : ENUM DEFAULT 'pendente'
+  * criado_em : TIMESTAMP
+  respondido_em : TIMESTAMP
+}
+
+entity "notificacoes" as NOT {
+  * id : UUID <<PK>>
+  --
+  * usuario_id : UUID <<FK>>
+  * tipo : ENUM
+  * titulo : VARCHAR(100)
+  * mensagem : TEXT
+  payload : JSONB
+  * lida : BOOLEAN DEFAULT false
+  * criado_em : TIMESTAMP
+}
+
+entity "conquistas" as CON {
+  * id : UUID <<PK>>
+  --
+  * nome : VARCHAR(100)
+  descricao : TEXT
+  icone_url : TEXT
+  * criterio : VARCHAR(200)
+  * pontos : INTEGER
+}
+
+entity "usuario_conquistas" as UC {
+  * usuario_id : UUID <<FK>>
+  * conquista_id : UUID <<FK>>
+  --
+  * desbloqueada_em : TIMESTAMP
+}
+
+entity "ranking_cache" as RC {
+  * usuario_id : UUID <<FK>>
+  --
+  * posicao : INTEGER
+  * total_coladas : INTEGER
+  * lendarias_coladas : INTEGER
+  * pontos : INTEGER
+  * atualizado_em : TIMESTAMP
+}
+
+entity "tokens_recuperacao" as TR {
+  * id : UUID <<PK>>
+  --
+  * usuario_id : UUID <<FK>>
+  * token : VARCHAR(255) <<UNIQUE>>
+  * expiracao : TIMESTAMP
+  * criado_em : TIMESTAMP
+}
+
+entity "auditoria" as AUD {
+  * id : UUID <<PK>>
+  --
+  * admin_id : UUID <<FK>>
+  * acao : VARCHAR(100)
+  entidade_tipo : VARCHAR(50)
+  entidade_id : UUID
+  detalhes : JSONB
+  * criado_em : TIMESTAMP
+}
+
+' Relacionamentos
+US ||--o{ UF : "possui"
+US ||--o{ PED : "realiza"
+US ||--o{ PAC : "tem"
+US ||--o{ OFM : "publica"
+US ||--o{ PT : "propõe"
+US ||--o{ NOT : "recebe"
+US ||--o{ UC : "conquista"
+US ||--|| RC : "ranqueado em"
+US ||--o{ TR : "solicita"
+
+SEL ||--o{ JOG : "contém"
+JOG ||--o{ FIG : "representado por"
+
+FIG ||--o{ UF : "coletada em"
+FIG ||--o{ OFM : "negociada em"
+FIG ||--o{ PT : "oferecida em"
+
+PED ||--o{ PAC : "gera"
+
+OFM ||--o{ PT : "recebe"
+
+CON ||--o{ UC : "desbloqueada em"
+
+@enduml

@@ -1,0 +1,100 @@
+@startuml UC13-propor-troca
+title UC-13: Propor Troca Entre Usuários\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário\n(Proponente)" as Proponente
+participant "Interface\nWeb/Mobile" as UI
+participant "TrocaController" as TrocaCtrl
+participant "AuthMiddleware" as AuthMW
+participant "TrocaService" as TrocaSvc
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+participant "TrocaRepository" as TrocaRepo
+participant "NotificacaoService" as NotifSvc
+database "Banco de Dados" as BD
+
+Proponente -> UI : visualizarOferta(ofertaId)
+activate UI
+UI --> Proponente : exibirDetalhesOferta(oferta)
+deactivate UI
+
+Proponente -> UI : clicarProporTroca(ofertaId)
+activate UI
+UI --> Proponente : exibirSelecionarMinhaFigurinha()
+deactivate UI
+
+Proponente -> UI : selecionarFigurinhaParaOferecerNaTroca(\n  minhaFigurinhaId)
+activate UI
+
+UI -> TrocaCtrl : POST /api/trocas/propor\n{ ofertaId, minhaFigurinhaId }
+activate TrocaCtrl
+
+TrocaCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> TrocaCtrl : tokenValido(proponenteId)
+deactivate AuthMW
+
+TrocaCtrl -> TrocaSvc : criarPropostaTroca(\n  proponenteId, ofertaId, minhaFigurinhaId)
+activate TrocaSvc
+
+TrocaSvc -> UsFigRepo : verificarPosse(\n  proponenteId, minhaFigurinhaId)
+activate UsFigRepo
+UsFigRepo -> BD : SELECT quantidade, colada\nFROM usuario_figurinhas\nWHERE usuario_id=? AND figurinha_id=?
+activate BD
+BD --> UsFigRepo : { quantidade: 2, colada: true }
+deactivate BD
+UsFigRepo --> TrocaSvc : posseValidada
+deactivate UsFigRepo
+
+TrocaSvc -> TrocaSvc : validarCompatibilidade(\n  minhaFigurinha, figurinhaDesejadaNaOferta)
+activate TrocaSvc
+TrocaSvc --> TrocaSvc : compativel: true
+deactivate TrocaSvc
+
+TrocaSvc -> UsFigRepo : reservarFigurinha(\n  proponenteId, minhaFigurinhaId)
+activate UsFigRepo
+UsFigRepo -> BD : UPDATE usuario_figurinhas\nSET reservada = reservada + 1\nWHERE usuario_id=? AND figurinha_id=?
+activate BD
+BD --> UsFigRepo : ok
+deactivate BD
+UsFigRepo --> TrocaSvc : reservada
+deactivate UsFigRepo
+
+TrocaSvc -> TrocaRepo : salvarProposta(\n  proponenteId, ofertaId,\n  minhaFigurinhaId, status:'pendente')
+activate TrocaRepo
+TrocaRepo -> BD : INSERT INTO propostas_troca (...)
+activate BD
+BD --> TrocaRepo : propostaId
+deactivate BD
+TrocaRepo --> TrocaSvc : propostaCriada
+deactivate TrocaRepo
+
+TrocaSvc ->> NotifSvc : notificarDono(\n  donoOfertaId, propostaId,\n  "Nova proposta de troca recebida!")
+activate NotifSvc
+note right of NotifSvc : Notificação assíncrona\nvia push/email
+NotifSvc --> TrocaSvc : notificacaoEnviada
+deactivate NotifSvc
+
+TrocaSvc --> TrocaCtrl : propostaCriada(propostaId)
+deactivate TrocaSvc
+
+TrocaCtrl --> UI : HTTP 201 Created\n{ propostaId, status: "pendente" }
+deactivate TrocaCtrl
+
+UI --> Proponente : exibirConfirmacao(\n"Proposta enviada! Aguarde a resposta.")
+deactivate UI
+
+@enduml

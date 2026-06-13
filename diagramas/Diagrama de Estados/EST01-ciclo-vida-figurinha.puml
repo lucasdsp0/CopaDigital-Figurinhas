@@ -1,0 +1,87 @@
+@startuml EST01-ciclo-vida-figurinha
+title Diagrama de Estados: Ciclo de Vida da Figurinha no Álbum\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam state {
+  BackgroundColor #EBF5FB
+  BorderColor #2980B9
+  ArrowColor #2C3E50
+  FontSize 13
+}
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #F0C040
+}
+
+[*] --> NaoPossui : Sistema criado /\nálbum vazio
+
+state NaoPossui {
+  [*] --> Faltando
+  Faltando : figurinhaId registrada no catálogo
+  Faltando : colada = false
+  Faltando : quantidade = 0
+}
+
+NaoPossui --> EmEstoque : usuário recebe figurinha\nao abrir pacote /\nquantidade++
+
+state EmEstoque {
+  [*] --> Disponivel
+  Disponivel : quantidade >= 1
+  Disponivel : colada = false
+  Disponivel : reservada = 0
+}
+
+EmEstoque --> Colada : usuário cola no álbum (UC-09) /\ncolada = true
+
+EmEstoque --> Reservada : figurinha selecionada\npara troca ou venda /\nreservada++
+
+state Reservada {
+  Reservada : quantidade >= 1
+  Reservada : colada = true (uma unidade)
+  Reservada : reservada > 0
+}
+
+Reservada --> EmEstoque : proposta recusada\nou anúncio cancelado /\nreservada--
+
+Reservada --> Transferida : troca aceita\nou venda concluída (UC-14 / UC-16)
+
+state Colada {
+  Colada : colada = true
+  Colada : quantidade >= 1
+  Colada : colada_em = timestamp
+}
+
+state Transferida {
+  Transferida : figurinha removida do inventário
+  Transferida : transferida para outro usuário
+}
+
+Transferida --> [*] : figurinha saiu do álbum\ndeste usuário
+
+Colada --> EmEstoque : --\nnota: figurinha colada não\npode ser descolada
+
+note right of Reservada
+  Uma unidade extra pode
+  ser usada para troca/venda
+  enquanto o álbum permanece
+  com a cópia colada
+end note
+
+note right of Colada
+  Guards:
+  when [colada == true] → NÃO pode trocar nem vender
+  when [quantidade > 1 AND colada == true] → pode trocar/vender repetidas
+end note
+
+state "Repetida" as Rep
+EmEstoque --> Rep : quantidade > 1 /\nsinalizar como repetida
+
+Rep : quantidade > 1
+Rep : colada = true (1 unidade)
+Rep : (quantidade - 1) disponíveis para troca/venda
+
+Rep --> Reservada : publicar oferta\nde troca ou venda
+
+Rep --> EmEstoque : figurinha colada /\nquantidade--
+
+@enduml

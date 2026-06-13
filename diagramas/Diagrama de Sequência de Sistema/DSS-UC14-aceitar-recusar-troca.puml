@@ -1,0 +1,54 @@
+@startuml DSS-UC14-aceitar-recusar-troca
+title DSS - UC-14: Aceitar / Recusar Proposta de Troca\nSistema FigurinhasCopa Digital (Visao de Sistema)
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+note over Sistema
+  <<Sistema>>
+  FigurinhasCopa Digital
+  (caixa preta)
+end note
+
+actor "Usuario\n(Dono da Oferta)" as D
+actor "Usuario\n(Proponente)" as P
+participant "Sistema\nFigurinhasCopa" as Sistema
+
+D -> Sistema : consultarPropostasPendentes()
+activate Sistema
+Sistema --> D : exibirPropostas(listaPropostas)
+deactivate Sistema
+
+D -> Sistema : visualizarDetalhesProposta(propostaId)
+activate Sistema
+Sistema --> D : exibirDetalhesProposta(figurinhaOferecida, proponente)
+deactivate Sistema
+
+alt Dono aceita a proposta
+  D -> Sistema : aceitarProposta(propostaId)
+  activate Sistema
+  Sistema --> D : trocaConcluida("Troca realizada com sucesso!")
+  Sistema ->> P : notificarProponente("Sua proposta foi aceita! Figurinha recebida.")
+  deactivate Sistema
+
+else Dono recusa a proposta
+  D -> Sistema : recusarProposta(propostaId)
+  activate Sistema
+  Sistema --> D : propostaRecusada("Proposta recusada.")
+  Sistema ->> P : notificarProponente("Sua proposta foi recusada.")
+  deactivate Sistema
+end
+
+@enduml

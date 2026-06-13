@@ -1,0 +1,310 @@
+@startuml CLS01-diagrama-classes
+title Diagrama de Classes\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam class {
+  BackgroundColor #EBF5FB
+  BorderColor #2980B9
+  ArrowColor #2C3E50
+  FontSize 12
+  HeaderBackgroundColor #2980B9
+  HeaderFontColor #FFFFFF
+}
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #F0C040
+}
+
+' =========== USUÁRIO ===========
+class Usuario {
+  - id: UUID
+  - nome: String
+  - email: String
+  - senhaHash: String
+  - dataNascimento: Date
+  - fotoPerfil: String
+  - bio: String
+  - status: StatusUsuario
+  - ultimoLogin: DateTime
+  - criadoEm: DateTime
+  + autenticar(senha: String): Boolean
+  + ativarConta(token: String): void
+  + atualizarPerfil(dados: DadosPerfil): void
+  + calcularPontuacao(): Integer
+}
+
+enum StatusUsuario {
+  ATIVO
+  INATIVO
+  SUSPENSO
+  PENDENTE_CONFIRMACAO
+}
+
+' =========== ÁLBUM ===========
+class Album {
+  - id: UUID
+  - usuarioId: UUID
+  - criadoEm: DateTime
+  + calcularProgresso(): ProgressoAlbum
+  + getColadasCount(): Integer
+  + getFaltandoCount(): Integer
+  + getTotalRepetidas(): Integer
+}
+
+class ProgressoAlbum {
+  + totalFigurinhas: Integer
+  + totalColadas: Integer
+  + porcentagem: Double
+  + lendariasColadas: Integer
+}
+
+' =========== FIGURINHA ===========
+class Figurinha {
+  - id: UUID
+  - numero: Integer
+  - nome: String
+  - raridade: Raridade
+  - tipo: TipoFigurinha
+  - imagemUrl: String
+  - ativo: Boolean
+  - jogadorId: UUID
+  + getJogador(): Jogador
+  + getSelecao(): Selecao
+}
+
+enum Raridade {
+  COMUM
+  RARA
+  LENDARIA
+  BRILHANTE
+}
+
+enum TipoFigurinha {
+  JOGADOR
+  ESTADIO
+  MASCOTE
+  TROFÉU
+  SELECAO
+}
+
+class UsuarioFigurinha {
+  - id: UUID
+  - usuarioId: UUID
+  - figurinhaId: UUID
+  - quantidade: Integer
+  - colada: Boolean
+  - reservada: Integer
+  - coladaEm: DateTime
+  - adquiridaEm: DateTime
+  + getQuantidadeDisponivel(): Integer
+  + isRepetida(): Boolean
+  + reservar(qtd: Integer): void
+  + liberarReserva(qtd: Integer): void
+}
+
+' =========== JOGADOR / SELEÇÃO ===========
+class Jogador {
+  - id: UUID
+  - nome: String
+  - posicao: Posicao
+  - clube: String
+  - selecaoId: UUID
+  - gosCopa: Integer
+  - assistencias: Integer
+  - jogos: Integer
+  - mediaNota: Double
+}
+
+class Selecao {
+  - id: UUID
+  - nome: String
+  - pais: String
+  - bandeira: String
+  - grupo: String
+  - fase: String
+}
+
+' =========== PACOTE ===========
+class Pacote {
+  - id: UUID
+  - usuarioId: UUID
+  - pedidoId: UUID
+  - tipo: TipoPacote
+  - status: StatusPacote
+  - abertaEm: DateTime
+  + abrir(): List~Figurinha~
+}
+
+enum TipoPacote {
+  BASICO
+  PREMIUM
+  LENDARIO
+}
+
+enum StatusPacote {
+  NAO_ABERTO
+  ABERTO
+}
+
+class Pedido {
+  - id: UUID
+  - usuarioId: UUID
+  - valor: BigDecimal
+  - status: StatusPedido
+  - transacaoId: String
+  - metodoPagamento: String
+  - criadoEm: DateTime
+  + calcularTotal(): BigDecimal
+}
+
+enum StatusPedido {
+  PENDENTE
+  APROVADO
+  RECUSADO
+  REEMBOLSADO
+}
+
+' =========== MARKETPLACE ===========
+class OfertaMarketplace {
+  - id: UUID
+  - vendedorId: UUID
+  - figurinhaId: UUID
+  - preco: BigDecimal
+  - quantidade: Integer
+  - tipo: TipoOferta
+  - status: StatusOferta
+  - criadoEm: DateTime
+  - expiracaoEm: DateTime
+  + isAtiva(): Boolean
+  + isExpirada(): Boolean
+  + bloquear(): void
+  + cancelar(): void
+}
+
+enum TipoOferta {
+  VENDA
+  TROCA
+}
+
+enum StatusOferta {
+  ATIVA
+  RESERVADA
+  CONCLUIDA
+  CANCELADA
+  EXPIRADA
+}
+
+class PropostaTroca {
+  - id: UUID
+  - proponenteId: UUID
+  - ofertaId: UUID
+  - figurinhaOfertadaId: UUID
+  - status: StatusProposta
+  - criadoEm: DateTime
+  + aceitar(): void
+  + recusar(): void
+}
+
+enum StatusProposta {
+  PENDENTE
+  ACEITA
+  RECUSADA
+  CANCELADA
+}
+
+' =========== NOTIFICAÇÃO ===========
+class Notificacao {
+  - id: UUID
+  - usuarioId: UUID
+  - tipo: TipoNotificacao
+  - titulo: String
+  - mensagem: String
+  - payload: JSON
+  - lida: Boolean
+  - criadoEm: DateTime
+  + marcarComoLida(): void
+}
+
+enum TipoNotificacao {
+  NOVA_PROPOSTA
+  PROPOSTA_ACEITA
+  PROPOSTA_RECUSADA
+  FIGURINHA_VENDIDA
+  CONQUISTA_DESBLOQUEADA
+  LEMBRETE_OFERTA
+}
+
+' =========== CONQUISTA ===========
+class Conquista {
+  - id: UUID
+  - nome: String
+  - descricao: String
+  - icone: String
+  - criterio: String
+  - pontos: Integer
+}
+
+class UsuarioConquista {
+  - usuarioId: UUID
+  - conquistaId: UUID
+  - desbloqueadaEm: DateTime
+}
+
+' =========== RANKING ===========
+class RankingEntry {
+  - usuarioId: UUID
+  - posicao: Integer
+  - totalColadas: Integer
+  - lendariasColadas: Integer
+  - pontos: Integer
+  - atualizadoEm: DateTime
+}
+
+' =========== AUDITORIA ===========
+class RegistroAuditoria {
+  - id: UUID
+  - adminId: UUID
+  - acao: String
+  - entidadeId: UUID
+  - detalhes: JSON
+  - criadoEm: DateTime
+}
+
+' =========== RELACIONAMENTOS ===========
+
+Usuario "1" -- "1" Album : possui >
+Usuario "1" -- "*" UsuarioFigurinha : coleciona >
+Usuario "1" -- "*" Pedido : realiza >
+Usuario "1" -- "*" OfertaMarketplace : publica >
+Usuario "1" -- "*" PropostaTroca : propõe >
+Usuario "1" -- "*" Notificacao : recebe >
+Usuario "1" -- "*" UsuarioConquista : conquista >
+Usuario "1" -- "1" RankingEntry : aparece em >
+
+Album "1" -- "*" UsuarioFigurinha : contém >
+
+Figurinha "*" -- "1" Jogador : representa >
+Jogador "*" -- "1" Selecao : pertence >
+Figurinha "1" -- "*" UsuarioFigurinha : é referenciada por >
+Figurinha "1" -- "*" OfertaMarketplace : é negociada em >
+
+Pedido "1" -- "*" Pacote : gera >
+Pacote "*" -- "1" Usuario : pertence a >
+
+OfertaMarketplace "1" -- "*" PropostaTroca : recebe >
+
+Conquista "1" -- "*" UsuarioConquista : é conquistada por >
+
+Usuario "1" -- "1" StatusUsuario
+Figurinha "1" -- "1" Raridade
+Figurinha "1" -- "1" TipoFigurinha
+Pacote "1" -- "1" TipoPacote
+Pedido "1" -- "1" StatusPedido
+OfertaMarketplace "1" -- "1" TipoOferta
+OfertaMarketplace "1" -- "1" StatusOferta
+PropostaTroca "1" -- "1" StatusProposta
+Notificacao "1" -- "1" TipoNotificacao
+
+Album ..> ProgressoAlbum : calcula >
+
+@enduml

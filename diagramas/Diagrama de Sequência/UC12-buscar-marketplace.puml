@@ -1,0 +1,85 @@
+@startuml UC12-buscar-marketplace
+title UC-12: Buscar Figurinha no Marketplace\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "MarketplaceController" as MktCtrl
+participant "AuthMiddleware" as AuthMW
+participant "BuscaService" as BuscaSvc
+participant "OfertaRepository" as OfertaRepo
+participant "CacheService" as Cache
+database "Banco de Dados" as BD
+
+Usuario -> UI : acessarMarketplace()
+activate UI
+
+UI -> MktCtrl : GET /api/marketplace/ofertas
+activate MktCtrl
+MktCtrl -> BuscaSvc : listarOfertas(filtros: {})
+activate BuscaSvc
+BuscaSvc -> Cache : buscarOfertasCache("all")
+activate Cache
+Cache --> BuscaSvc : listaOfertasCache
+deactivate Cache
+BuscaSvc --> MktCtrl : ofertasRecentes
+deactivate BuscaSvc
+MktCtrl --> UI : HTTP 200 OK { ofertas }
+deactivate MktCtrl
+UI --> Usuario : exibirMarketplace(ofertasRecentes)
+deactivate UI
+
+== Busca com Filtros ==
+
+Usuario -> UI : aplicarFiltros(\n  selecao: "Brasil",\n  raridade: "lendaria",\n  tipo: "troca")
+activate UI
+
+UI -> MktCtrl : GET /api/marketplace/buscar\n?selecao=Brasil&raridade=lendaria&tipo=troca
+activate MktCtrl
+
+MktCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> MktCtrl : tokenValido(userId)
+deactivate AuthMW
+
+MktCtrl -> BuscaSvc : buscarComFiltros(filtros, userId)
+activate BuscaSvc
+
+BuscaSvc -> OfertaRepo : buscarOfertas(filtros)
+activate OfertaRepo
+OfertaRepo -> BD : SELECT o.*, f.nome, f.raridade, f.imagem_url,\n  u.nome AS ofertante\nFROM ofertas_troca o\nJOIN figurinhas f ON f.id = o.oferece_id\nJOIN usuarios u ON u.id = o.usuario_id\nWHERE o.status = 'ativa'\n  AND f.selecao = ?\n  AND f.raridade = ?\n  AND o.tipo = ?\n  AND o.usuario_id != ?
+activate BD
+BD --> OfertaRepo : ofertasFiltradas
+deactivate BD
+OfertaRepo --> BuscaSvc : ofertas
+deactivate OfertaRepo
+
+BuscaSvc -> BuscaSvc : ordenarPorRelevancia(ofertas)
+activate BuscaSvc
+BuscaSvc --> BuscaSvc : ofertasOrdenadas
+deactivate BuscaSvc
+
+BuscaSvc --> MktCtrl : resultado(ofertasOrdenadas, total)
+deactivate BuscaSvc
+
+MktCtrl --> UI : HTTP 200 OK\n{ ofertas, total, pagina }
+deactivate MktCtrl
+
+UI --> Usuario : exibirResultadosBusca(ofertas)
+deactivate UI
+
+@enduml

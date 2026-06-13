@@ -1,0 +1,95 @@
+@startuml UC11-publicar-oferta
+title UC-11: Publicar Oferta de Troca\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "MarketplaceController" as MktCtrl
+participant "AuthMiddleware" as AuthMW
+participant "OfertaService" as OfertaSvc
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+participant "OfertaRepository" as OfertaRepo
+database "Banco de Dados" as BD
+
+note over Usuario, UI : Pré-condição: usuário possui\nfigurinhas repetidas (UC-10)
+
+Usuario -> UI : acessarPublicarOferta()
+activate UI
+UI --> Usuario : exibirFormularioOferta()
+deactivate UI
+
+Usuario -> UI : selecionarFigurinhaOferecer(\n  figurinhaId, qtd)
+activate UI
+UI --> Usuario : exibirCampoDeseja()
+deactivate UI
+
+Usuario -> UI : informarFigurinhaDesejada(\n  figurinhaDesejadaId)
+activate UI
+
+UI -> MktCtrl : POST /api/marketplace/ofertas\n{ oferece: {id, qtd}, deseja: {id} }
+activate MktCtrl
+
+MktCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> MktCtrl : tokenValido(userId)
+deactivate AuthMW
+
+MktCtrl -> OfertaSvc : publicarOferta(userId, ofereceId, desejaId, qtd)
+activate OfertaSvc
+
+OfertaSvc -> UsFigRepo : verificarPosse(userId, ofereceId, qtd)
+activate UsFigRepo
+UsFigRepo -> BD : SELECT quantidade - 1 AS disponivel\nFROM usuario_figurinhas\nWHERE usuario_id=? AND figurinha_id=?\n  AND colada=true
+activate BD
+BD --> UsFigRepo : { disponivel: 3 }
+deactivate BD
+UsFigRepo --> OfertaSvc : posseValidada
+deactivate UsFigRepo
+
+OfertaSvc -> OfertaSvc : validarOferta(posse, qtdOfertada)
+activate OfertaSvc
+OfertaSvc --> OfertaSvc : ofertaValida: true
+deactivate OfertaSvc
+
+OfertaSvc -> UsFigRepo : reservarFigurinha(userId, ofereceId, qtd)
+activate UsFigRepo
+UsFigRepo -> BD : UPDATE usuario_figurinhas\nSET reservada = reservada + ?\nWHERE usuario_id=? AND figurinha_id=?
+activate BD
+BD --> UsFigRepo : atualizado
+deactivate BD
+UsFigRepo --> OfertaSvc : figurinhaReservada
+deactivate UsFigRepo
+
+OfertaSvc -> OfertaRepo : salvarOferta\n(userId, ofereceId, desejaId, status:'ativa')
+activate OfertaRepo
+OfertaRepo -> BD : INSERT INTO ofertas_troca (...)
+activate BD
+BD --> OfertaRepo : ofertaId
+deactivate BD
+OfertaRepo --> OfertaSvc : ofertaCriada
+deactivate OfertaRepo
+
+OfertaSvc --> MktCtrl : ofertaPublicada(ofertaId)
+deactivate OfertaSvc
+
+MktCtrl --> UI : HTTP 201 Created\n{ ofertaId, status: "ativa" }
+deactivate MktCtrl
+
+UI --> Usuario : exibirConfirmacao(\n"Oferta publicada no marketplace!")
+deactivate UI
+
+@enduml

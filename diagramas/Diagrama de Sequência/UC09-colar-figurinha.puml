@@ -1,0 +1,99 @@
+@startuml UC09-colar-figurinha
+title UC-09: Colar Figurinha no Álbum\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "AlbumController" as AlbumCtrl
+participant "AuthMiddleware" as AuthMW
+participant "AlbumService" as AlbumSvc
+participant "ConquistaService" as ConqSvc
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+database "Banco de Dados" as BD
+
+note over Usuario, UI : Pré-condição: figurinha obtida\nao abrir um pacote (UC-07)
+
+Usuario -> UI : clicarColarFigurinha(figurinhaId)
+activate UI
+
+UI -> AlbumCtrl : POST /api/album/colar(figurinhaId)
+activate AlbumCtrl
+
+AlbumCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> AlbumCtrl : tokenValido(userId)
+deactivate AuthMW
+
+AlbumCtrl -> AlbumSvc : colarFigurinha(userId, figurinhaId)
+activate AlbumSvc
+
+AlbumSvc -> UsFigRepo : buscarPosse(userId, figurinhaId)
+activate UsFigRepo
+UsFigRepo -> BD : SELECT quantidade, colada\nFROM usuario_figurinhas\nWHERE usuario_id=? AND figurinha_id=?
+activate BD
+BD --> UsFigRepo : { quantidade: 2, colada: false }
+deactivate BD
+UsFigRepo --> AlbumSvc : posseAtual
+deactivate UsFigRepo
+
+AlbumSvc -> AlbumSvc : validarCola(posseAtual)
+activate AlbumSvc
+note right : Verifica se o usuário\npossui a figurinha e\nnão está colada ainda
+AlbumSvc --> AlbumSvc : podeConlar: true
+deactivate AlbumSvc
+
+AlbumSvc -> UsFigRepo : marcarComoColada(userId, figurinhaId)
+activate UsFigRepo
+UsFigRepo -> BD : UPDATE usuario_figurinhas\nSET colada = true, colada_em = NOW()\nWHERE usuario_id=? AND figurinha_id=?
+activate BD
+BD --> UsFigRepo : atualizado
+deactivate BD
+UsFigRepo --> AlbumSvc : ok
+deactivate UsFigRepo
+
+AlbumSvc -> AlbumSvc : calcularProgressoAtual(userId)
+activate AlbumSvc
+AlbumSvc -> BD : SELECT COUNT(*) FROM usuario_figurinhas\nWHERE usuario_id=? AND colada=true
+activate BD
+BD --> AlbumSvc : totalColadas
+deactivate BD
+AlbumSvc --> AlbumSvc : progresso { coladas, total, porcentagem }
+deactivate AlbumSvc
+
+AlbumSvc ->> ConqSvc : verificarConquistas(userId, progresso)
+activate ConqSvc
+note right of ConqSvc : Assíncrono: verifica\nbadges (25%, 50%, 100%)
+ConqSvc --> AlbumSvc : conquistas
+deactivate ConqSvc
+
+AlbumSvc --> AlbumCtrl : figurinhaColada(progresso, conquistasDesbloqueadas)
+deactivate AlbumSvc
+
+AlbumCtrl --> UI : HTTP 200 OK\n{ sucesso, progresso, conquistas }
+deactivate AlbumCtrl
+
+UI --> Usuario : exibirAnimacaoCola(figurinha, progresso)
+deactivate UI
+
+== Fluxo Alternativo: Figurinha já colada ==
+alt Figurinha já está colada no álbum
+  AlbumSvc --> AlbumCtrl : ErroNegocio("Figurinha já colada")
+  AlbumCtrl --> UI : HTTP 409 Conflict
+  UI --> Usuario : exibirAviso("Esta figurinha já está no álbum!")
+end
+
+@enduml

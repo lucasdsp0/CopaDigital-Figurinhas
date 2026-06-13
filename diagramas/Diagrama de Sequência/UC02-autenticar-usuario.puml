@@ -1,0 +1,94 @@
+@startuml UC02-autenticar-usuario
+title UC-02: Autenticar Usuário (Login)\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "AuthController" as AuthCtrl
+participant "AuthService" as AuthSvc
+participant "UsuarioRepository" as UsuarioRepo
+participant "JwtService" as JwtSvc
+database "Banco de Dados" as BD
+
+Usuario -> UI : informarCredenciais(email, senha)
+activate UI
+
+UI -> AuthCtrl : POST /api/auth/login(email, senha)
+activate AuthCtrl
+
+AuthCtrl -> AuthSvc : autenticar(email, senha)
+activate AuthSvc
+
+AuthSvc -> UsuarioRepo : buscarPorEmail(email)
+activate UsuarioRepo
+UsuarioRepo -> BD : SELECT * FROM usuarios WHERE email = ?
+activate BD
+BD --> UsuarioRepo : dadosUsuario
+deactivate BD
+UsuarioRepo --> AuthSvc : usuario
+deactivate UsuarioRepo
+
+AuthSvc -> AuthSvc : verificarSenha(senhaInformada, senhaHash)
+activate AuthSvc
+AuthSvc --> AuthSvc : senhaValida: true
+deactivate AuthSvc
+
+AuthSvc -> AuthSvc : verificarContaAtiva(usuario)
+activate AuthSvc
+AuthSvc --> AuthSvc : contaAtiva: true
+deactivate AuthSvc
+
+AuthSvc -> JwtSvc : gerarToken(userId, email, perfil)
+activate JwtSvc
+JwtSvc --> AuthSvc : jwtToken(accessToken, refreshToken)
+deactivate JwtSvc
+
+AuthSvc -> UsuarioRepo : atualizarUltimoLogin(userId, timestamp)
+activate UsuarioRepo
+UsuarioRepo -> BD : UPDATE usuarios SET ultimo_login = NOW() WHERE id = ?
+activate BD
+BD --> UsuarioRepo : atualizado
+deactivate BD
+UsuarioRepo --> AuthSvc : ok
+deactivate UsuarioRepo
+
+AuthSvc --> AuthCtrl : loginSucesso(accessToken, refreshToken, dadosUsuario)
+deactivate AuthSvc
+
+AuthCtrl --> UI : HTTP 200 OK\n{ accessToken, refreshToken, usuario }
+deactivate AuthCtrl
+
+UI --> Usuario : redirecionarParaDashboard()
+deactivate UI
+
+== Fluxo Alternativo: Credenciais Inválidas ==
+
+alt Senha incorreta ou usuário não encontrado
+  AuthSvc --> AuthCtrl : ErroAutenticacao("Credenciais inválidas")
+  AuthCtrl --> UI : HTTP 401 Unauthorized
+  UI --> Usuario : exibirErro("E-mail ou senha incorretos")
+end
+
+== Fluxo Alternativo: Conta não ativada ==
+
+alt Conta pendente de ativação
+  AuthSvc --> AuthCtrl : ErroConta("Conta não confirmada")
+  AuthCtrl --> UI : HTTP 403 Forbidden
+  UI --> Usuario : exibirErro("Confirme seu e-mail\npara ativar a conta")
+end
+
+@enduml

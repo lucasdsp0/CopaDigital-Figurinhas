@@ -1,0 +1,103 @@
+@startuml UC01-cadastrar-usuario
+title UC-01: Cadastrar Usuário\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "AuthController" as AuthCtrl
+participant "UsuarioService" as UsuarioSvc
+participant "ValidacaoService" as ValidSvc
+participant "UsuarioRepository" as UsuarioRepo
+database "Banco de Dados" as BD
+participant "EmailService" as EmailSvc
+
+Usuario -> UI : preencherFormularioCadastro(\n  nome, email, senha, dataNasc)
+activate UI
+
+UI -> AuthCtrl : POST /api/auth/cadastrar(dadosCadastro)
+activate AuthCtrl
+
+AuthCtrl -> ValidSvc : validarDadosCadastro(dadosCadastro)
+activate ValidSvc
+ValidSvc --> AuthCtrl : resultadoValidacao(ok: true)
+deactivate ValidSvc
+
+AuthCtrl -> UsuarioSvc : cadastrarUsuario(dadosCadastro)
+activate UsuarioSvc
+
+UsuarioSvc -> UsuarioRepo : buscarPorEmail(email)
+activate UsuarioRepo
+UsuarioRepo -> BD : SELECT * FROM usuarios WHERE email = ?
+activate BD
+BD --> UsuarioRepo : resultadoVazio
+deactivate BD
+UsuarioRepo --> UsuarioSvc : usuarioNaoEncontrado
+deactivate UsuarioRepo
+
+UsuarioSvc -> UsuarioSvc : hashSenha(senha)
+activate UsuarioSvc
+UsuarioSvc --> UsuarioSvc : senhaHash
+deactivate UsuarioSvc
+
+UsuarioSvc -> UsuarioRepo : salvarUsuario(novoUsuario)
+activate UsuarioRepo
+UsuarioRepo -> BD : INSERT INTO usuarios (...)
+activate BD
+BD --> UsuarioRepo : usuarioSalvo(id)
+deactivate BD
+UsuarioRepo --> UsuarioSvc : usuarioCriado
+deactivate UsuarioRepo
+
+UsuarioSvc ->> EmailSvc : enviarEmailConfirmacao(email, tokenConfirmacao)
+activate EmailSvc
+note right of EmailSvc : Mensagem assíncrona:\nnão bloqueia o fluxo principal
+EmailSvc --> UsuarioSvc : emailEnviado
+deactivate EmailSvc
+
+UsuarioSvc --> AuthCtrl : usuarioCadastrado(id, email)
+deactivate UsuarioSvc
+
+AuthCtrl --> UI : HTTP 201 Created\n{ userId, mensagem: "Verifique seu e-mail" }
+deactivate AuthCtrl
+
+UI --> Usuario : exibirMensagem("Cadastro realizado!\nConfirme seu e-mail.")
+deactivate UI
+
+== Confirmação de E-mail ==
+
+Usuario -> UI : clicarLinkConfirmacao(token)
+activate UI
+UI -> AuthCtrl : GET /api/auth/confirmar?token=...
+activate AuthCtrl
+AuthCtrl -> UsuarioSvc : confirmarEmail(token)
+activate UsuarioSvc
+UsuarioSvc -> UsuarioRepo : ativarUsuario(token)
+activate UsuarioRepo
+UsuarioRepo -> BD : UPDATE usuarios SET ativo = true WHERE token = ?
+activate BD
+BD --> UsuarioRepo : atualizado
+deactivate BD
+UsuarioRepo --> UsuarioSvc : usuarioAtivado
+deactivate UsuarioRepo
+UsuarioSvc --> AuthCtrl : contaAtivada
+deactivate UsuarioSvc
+AuthCtrl --> UI : HTTP 200 OK
+deactivate AuthCtrl
+UI --> Usuario : exibirMensagem("Conta ativada com sucesso!")
+deactivate UI
+
+@enduml

@@ -1,0 +1,128 @@
+@startuml UC20-gerenciar-usuarios
+title UC-20: Gerenciar Usuários e Moderação (Admin)\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Administrador" as Admin
+participant "Painel\nAdministrativo" as AdminUI
+participant "AdminController" as AdminCtrl
+participant "AdminAuthMiddleware" as AdminMW
+participant "ModeracaoService" as ModSvc
+participant "UsuarioRepository" as UsuarioRepo
+participant "AuditoriaService" as AuditSvc
+participant "NotificacaoService" as NotifSvc
+database "Banco de Dados" as BD
+
+Admin -> AdminUI : acessarPainelUsuarios()
+activate AdminUI
+AdminUI -> AdminCtrl : GET /admin/api/usuarios\n?filtro=suspeitos&pagina=1
+activate AdminCtrl
+AdminCtrl -> AdminMW : verificarPermissaoAdmin(jwtToken)
+activate AdminMW
+AdminMW --> AdminCtrl : adminAutenticado
+deactivate AdminMW
+AdminCtrl -> ModSvc : listarUsuarios(filtro, pagina)
+activate ModSvc
+ModSvc -> UsuarioRepo : findComFiltros(filtro, pagina)
+activate UsuarioRepo
+UsuarioRepo -> BD : SELECT u.*, COUNT(d.id) AS denuncias\nFROM usuarios u\nLEFT JOIN denuncias d ON d.usuario_id=u.id\nGROUP BY u.id\nHAVING denuncias > 0\nORDER BY denuncias DESC
+activate BD
+BD --> UsuarioRepo : usuariosSuspeitos
+deactivate BD
+UsuarioRepo --> ModSvc : usuarios
+deactivate UsuarioRepo
+ModSvc --> AdminCtrl : usuarios
+deactivate ModSvc
+AdminCtrl --> AdminUI : HTTP 200 OK { usuarios }
+deactivate AdminCtrl
+AdminUI --> Admin : exibirListaUsuarios(usuarios)
+deactivate AdminUI
+
+== Visualizar Detalhes de Usuário ==
+
+Admin -> AdminUI : clicarUsuario(userId)
+activate AdminUI
+AdminUI -> AdminCtrl : GET /admin/api/usuarios/{userId}
+activate AdminCtrl
+AdminCtrl -> AdminMW : verificarPermissaoAdmin(jwtToken)
+activate AdminMW
+AdminMW --> AdminCtrl : ok
+deactivate AdminMW
+AdminCtrl -> ModSvc : buscarDetalhesUsuario(userId)
+activate ModSvc
+ModSvc -> UsuarioRepo : findByIdComHistorico(userId)
+activate UsuarioRepo
+UsuarioRepo -> BD : SELECT u.*, COUNT(t.id) AS trocas,\n  COUNT(v.id) AS vendas, COUNT(d.id) AS denuncias\nFROM usuarios u\nLEFT JOIN trocas t ON t.usuario_id=u.id\nLEFT JOIN vendas v ON v.usuario_id=u.id\nLEFT JOIN denuncias d ON d.usuario_id=u.id\nWHERE u.id=?
+activate BD
+BD --> UsuarioRepo : detalhes
+deactivate BD
+UsuarioRepo --> ModSvc : detalhesUsuario
+deactivate UsuarioRepo
+ModSvc --> AdminCtrl : detalhes
+deactivate ModSvc
+AdminCtrl --> AdminUI : HTTP 200 OK { detalhes }
+deactivate AdminCtrl
+AdminUI --> Admin : exibirDetalhes(detalhes)
+deactivate AdminUI
+
+== Suspender Usuário ==
+
+Admin -> AdminUI : clicarSuspender(userId, motivo)
+activate AdminUI
+
+AdminUI -> AdminCtrl : PUT /admin/api/usuarios/{userId}/suspender\n{ motivo, duracao }
+activate AdminCtrl
+
+AdminCtrl -> AdminMW : verificarPermissaoAdmin(jwtToken)
+activate AdminMW
+AdminMW --> AdminCtrl : ok
+deactivate AdminMW
+
+AdminCtrl -> ModSvc : suspenderUsuario(userId, adminId, motivo, duracao)
+activate ModSvc
+
+ModSvc -> UsuarioRepo : atualizarStatus(userId, 'suspenso', ate: dataFim)
+activate UsuarioRepo
+UsuarioRepo -> BD : UPDATE usuarios\nSET status='suspenso',\n  suspenso_ate=?, motivo_suspensao=?\nWHERE id=?
+activate BD
+BD --> UsuarioRepo : atualizado
+deactivate BD
+UsuarioRepo --> ModSvc : ok
+deactivate UsuarioRepo
+
+ModSvc -> AuditSvc : registrarAcao(\n  adminId, "SUSPENDER_USUARIO", userId, motivo)
+activate AuditSvc
+AuditSvc -> BD : INSERT INTO auditoria (...)
+activate BD
+BD --> AuditSvc : ok
+deactivate BD
+AuditSvc --> ModSvc : registrado
+deactivate AuditSvc
+
+ModSvc ->> NotifSvc : notificarUsuario(\n  userId, "Sua conta foi suspensa por: " + motivo)
+activate NotifSvc
+NotifSvc --> ModSvc : ok
+deactivate NotifSvc
+
+ModSvc --> AdminCtrl : usuarioSuspenso
+deactivate ModSvc
+
+AdminCtrl --> AdminUI : HTTP 200 OK\n{ mensagem: "Usuário suspenso" }
+deactivate AdminCtrl
+AdminUI --> Admin : exibirConfirmacao("Usuário suspenso com sucesso.")
+deactivate AdminUI
+
+@enduml

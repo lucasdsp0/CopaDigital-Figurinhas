@@ -1,0 +1,152 @@
+@startuml COMP01-componentes-implantacao
+title Diagrama de Componentes e Implantação\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam component {
+  BackgroundColor #EBF5FB
+  BorderColor #2980B9
+  ArrowColor #2C3E50
+  FontSize 12
+}
+skinparam node {
+  BackgroundColor #D5E8D4
+  BorderColor #27AE60
+  FontSize 12
+}
+skinparam database {
+  BackgroundColor #FAD7A0
+  BorderColor #E67E22
+}
+skinparam cloud {
+  BackgroundColor #F2D7EE
+  BorderColor #8E44AD
+}
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #F0C040
+}
+
+' =========== CLIENTES ===========
+node "Dispositivos Cliente" {
+  [App Mobile\n(React Native)] as AppMobile
+  [App Web\n(React + Vite)] as AppWeb
+}
+
+' =========== CDN ===========
+cloud "CDN / Edge\n(CloudFront)" as CDN {
+  [Assets Estáticos\n(imagens figurinhas,\nHTML, JS, CSS)] as Assets
+}
+
+AppMobile --> CDN : HTTPS
+AppWeb --> CDN : HTTPS
+
+' =========== API GATEWAY ===========
+node "API Gateway\n(AWS API Gateway)" as APIGW {
+  [Roteamento\ne Rate Limiting] as Router
+  [Autenticação\nJWT Middleware] as JWTMiddleware
+}
+
+CDN --> APIGW : HTTPS / REST
+
+' =========== BACKEND ===========
+node "Cluster de Aplicação\n(AWS ECS - Auto Scaling)" as BackendCluster {
+
+  node "Instância 1" {
+    [AuthService\n(Node.js)] as AuthSvc
+    [LojaService\n(Node.js)] as LojaSvc
+  }
+
+  node "Instância 2" {
+    [AlbumService\n(Node.js)] as AlbumSvc
+    [MarketplaceService\n(Node.js)] as MktSvc
+  }
+
+  node "Instância 3" {
+    [TrocaService\n(Node.js)] as TrocaSvc
+    [RankingService\n(Node.js)] as RankSvc
+  }
+
+  node "Instância 4" {
+    [NotificacaoService\n(Node.js)] as NotifSvc
+    [AdminService\n(Node.js)] as AdminSvc
+  }
+}
+
+APIGW --> BackendCluster : HTTP interno
+
+' =========== WEBSOCKET ===========
+node "WebSocket Server\n(AWS API Gateway WSS)" as WSS {
+  [Servidor WS\n(Socket.io)] as WSSvc
+}
+
+AppMobile --> WSS : WSS
+AppWeb --> WSS : WSS
+NotifSvc --> WSS : publica evento
+
+' =========== BANCO DE DADOS ===========
+node "Banco de Dados\n(AWS RDS - PostgreSQL)" {
+  database "DB Principal\n(Multi-AZ)" as DBMain
+  database "DB Réplica\n(Leitura)" as DBReplica
+}
+
+BackendCluster --> DBMain : TCP/IP (escrita)
+BackendCluster --> DBReplica : TCP/IP (leitura)
+DBMain --> DBReplica : replicação
+
+' =========== CACHE ===========
+node "Cache\n(AWS ElastiCache - Redis)" {
+  database "Redis\n(Sessões, Rankings,\nCatálogo)" as Redis
+}
+
+BackendCluster --> Redis : TCP/IP
+
+' =========== FILAS ===========
+node "Mensageria\n(AWS SQS)" {
+  [Fila Notificacoes] as FilaNotif
+  [Fila Email] as FilaEmail
+  [Fila Relatorios] as FilaRel
+}
+
+NotifSvc ->> FilaNotif : publica
+FilaNotif --> NotifSvc : consome
+AlbumSvc ->> FilaEmail : publica
+FilaEmail --> [EmailWorker] : consome
+AdminSvc ->> FilaRel : publica
+
+' =========== STORAGE ===========
+cloud "Object Storage\n(AWS S3)" as S3 {
+  [Imagens Figurinhas] as ImgFig
+  [Fotos Perfil] as FotoPerfil
+  [Relatórios PDF] as RelPDF
+}
+
+BackendCluster --> S3 : HTTPS
+CDN --> S3 : origin pull
+
+' =========== PAGAMENTO ===========
+cloud "Gateway de Pagamento\n(Stripe / PagSeguro)" as Gateway {
+  [API Cobranças] as APICobranca
+}
+
+LojaSvc --> Gateway : HTTPS / REST
+MktSvc --> Gateway : HTTPS / REST
+
+' =========== PUSH ===========
+cloud "Push Notifications\n(Firebase FCM)" as FCM {
+  [Push Service] as PushFCM
+}
+
+NotifSvc --> FCM : HTTPS
+
+note bottom of BackendCluster
+  Auto Scaling: 2 a 10 instâncias
+  baseado em CPU e requisições/s
+end note
+
+note right of DBMain
+  PostgreSQL 15
+  Multi-AZ para alta disponibilidade
+  Backup diário automatizado
+end note
+
+@enduml

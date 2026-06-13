@@ -1,0 +1,103 @@
+@startuml UC04-editar-perfil
+title UC-04: Editar Perfil\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "UsuarioController" as UsuarioCtrl
+participant "AuthMiddleware" as AuthMW
+participant "UsuarioService" as UsuarioSvc
+participant "StorageService" as StorageSvc
+participant "UsuarioRepository" as UsuarioRepo
+database "Banco de Dados" as BD
+
+Usuario -> UI : acessarPaginaPerfil()
+activate UI
+
+UI -> UsuarioCtrl : GET /api/usuarios/perfil
+activate UsuarioCtrl
+
+UsuarioCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> UsuarioCtrl : tokenValido(userId)
+deactivate AuthMW
+
+UsuarioCtrl -> UsuarioSvc : buscarPerfil(userId)
+activate UsuarioSvc
+UsuarioSvc -> UsuarioRepo : findById(userId)
+activate UsuarioRepo
+UsuarioRepo -> BD : SELECT * FROM usuarios WHERE id = ?
+activate BD
+BD --> UsuarioRepo : dadosUsuario
+deactivate BD
+UsuarioRepo --> UsuarioSvc : usuario
+deactivate UsuarioRepo
+UsuarioSvc --> UsuarioCtrl : dadosPerfil
+deactivate UsuarioSvc
+UsuarioCtrl --> UI : HTTP 200 OK\n{ perfil: {...} }
+deactivate UsuarioCtrl
+
+UI --> Usuario : exibirFormularioPerfil(dadosAtuais)
+deactivate UI
+
+== Edição dos Dados ==
+
+Usuario -> UI : alterarDados(nome, bio, fotoPerfil)
+activate UI
+
+UI -> UsuarioCtrl : PUT /api/usuarios/perfil(dadosAtualizados, foto)
+activate UsuarioCtrl
+
+UsuarioCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> UsuarioCtrl : tokenValido(userId)
+deactivate AuthMW
+
+alt Foto de perfil enviada
+  UsuarioCtrl -> StorageSvc : uploadFoto(foto, userId)
+  activate StorageSvc
+  StorageSvc --> UsuarioCtrl : urlFoto
+  deactivate StorageSvc
+end
+
+UsuarioCtrl -> UsuarioSvc : atualizarPerfil(userId, dadosAtualizados, urlFoto)
+activate UsuarioSvc
+
+UsuarioSvc -> UsuarioSvc : validarDados(dadosAtualizados)
+activate UsuarioSvc
+UsuarioSvc --> UsuarioSvc : dadosValidos: true
+deactivate UsuarioSvc
+
+UsuarioSvc -> UsuarioRepo : atualizar(userId, dadosAtualizados)
+activate UsuarioRepo
+UsuarioRepo -> BD : UPDATE usuarios SET nome=?, bio=?, foto=? WHERE id=?
+activate BD
+BD --> UsuarioRepo : atualizado
+deactivate BD
+UsuarioRepo --> UsuarioSvc : perfilAtualizado
+deactivate UsuarioRepo
+
+UsuarioSvc --> UsuarioCtrl : perfilAtualizado(dadosPerfil)
+deactivate UsuarioSvc
+
+UsuarioCtrl --> UI : HTTP 200 OK\n{ mensagem: "Perfil atualizado", perfil }
+deactivate UsuarioCtrl
+
+UI --> Usuario : exibirMensagem("Perfil atualizado com sucesso!")
+deactivate UI
+
+@enduml

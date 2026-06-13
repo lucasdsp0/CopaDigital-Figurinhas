@@ -1,0 +1,143 @@
+@startuml UC14-aceitar-recusar-troca
+title UC-14: Aceitar / Recusar Proposta de Troca\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário\n(Dono da Oferta)" as Dono
+participant "Interface\nWeb/Mobile" as UI
+participant "TrocaController" as TrocaCtrl
+participant "AuthMiddleware" as AuthMW
+participant "TrocaService" as TrocaSvc
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+participant "TrocaRepository" as TrocaRepo
+participant "NotificacaoService" as NotifSvc
+database "Banco de Dados" as BD
+
+Dono -> UI : acessarMinhasPropostas()
+activate UI
+UI -> TrocaCtrl : GET /api/trocas/propostas-recebidas
+activate TrocaCtrl
+TrocaCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> TrocaCtrl : tokenValido(donoId)
+deactivate AuthMW
+TrocaCtrl -> TrocaSvc : listarPropostasPendentes(donoId)
+activate TrocaSvc
+TrocaSvc -> TrocaRepo : findByDonoIdAndStatus(donoId, 'pendente')
+activate TrocaRepo
+TrocaRepo -> BD : SELECT * FROM propostas_troca\nWHERE dono_id=? AND status='pendente'
+activate BD
+BD --> TrocaRepo : propostas
+deactivate BD
+TrocaRepo --> TrocaSvc : propostas
+deactivate TrocaRepo
+TrocaSvc --> TrocaCtrl : propostas
+deactivate TrocaSvc
+TrocaCtrl --> UI : HTTP 200 OK { propostas }
+deactivate TrocaCtrl
+UI --> Dono : exibirPropostasPendentes(propostas)
+deactivate UI
+
+== Aceitar Proposta ==
+
+Dono -> UI : clicarAceitarProposta(propostaId)
+activate UI
+
+UI -> TrocaCtrl : PUT /api/trocas/propostas/{propostaId}/aceitar
+activate TrocaCtrl
+
+TrocaCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> TrocaCtrl : tokenValido(donoId)
+deactivate AuthMW
+
+TrocaCtrl -> TrocaSvc : aceitarProposta(donoId, propostaId)
+activate TrocaSvc
+
+TrocaSvc -> TrocaRepo : buscarProposta(propostaId)
+activate TrocaRepo
+TrocaRepo -> BD : SELECT * FROM propostas_troca\nJOIN ofertas_troca ON ...\nWHERE proposta_id = ?
+activate BD
+BD --> TrocaRepo : dadosTroca
+deactivate BD
+TrocaRepo --> TrocaSvc : dadosTroca
+deactivate TrocaRepo
+
+TrocaSvc -> UsFigRepo : transferirFigurinhas(\n  deDonoParaProponente: figurinhaDono,\n  deProponenteParaDono: figurinhaProponente)
+activate UsFigRepo
+UsFigRepo -> BD : BEGIN TRANSACTION;\nDELETE FROM usuario_figurinhas\n  WHERE usuario_id=dono AND figurinha_id=fig1;\nINSERT INTO usuario_figurinhas (proponente, fig1);\nDELETE FROM usuario_figurinhas\n  WHERE usuario_id=proponente AND figurinha_id=fig2;\nINSERT INTO usuario_figurinhas (dono, fig2);\nCOMMIT;
+activate BD
+BD --> UsFigRepo : transferenciaConcluida
+deactivate BD
+UsFigRepo --> TrocaSvc : ok
+deactivate UsFigRepo
+
+TrocaSvc -> TrocaRepo : atualizarStatus(propostaId, 'aceita')
+activate TrocaRepo
+TrocaRepo -> BD : UPDATE propostas_troca\nSET status='aceita', aceita_em=NOW()
+activate BD
+BD --> TrocaRepo : ok
+deactivate BD
+TrocaRepo --> TrocaSvc : ok
+deactivate TrocaRepo
+
+TrocaSvc ->> NotifSvc : notificarProponente(\n  proponenteId, "Proposta aceita! Troca realizada!")
+activate NotifSvc
+NotifSvc --> TrocaSvc : ok
+deactivate NotifSvc
+
+TrocaSvc --> TrocaCtrl : trocaRealizada
+deactivate TrocaSvc
+
+TrocaCtrl --> UI : HTTP 200 OK\n{ mensagem: "Troca realizada com sucesso!" }
+deactivate TrocaCtrl
+UI --> Dono : exibirSucesso("Troca concluída!")
+deactivate UI
+
+== Recusar Proposta ==
+
+alt Dono recusa a proposta
+  Dono -> UI : clicarRecusarProposta(propostaId)
+  activate UI
+  UI -> TrocaCtrl : PUT /api/trocas/propostas/{propostaId}/recusar
+  activate TrocaCtrl
+  TrocaCtrl -> TrocaSvc : recusarProposta(donoId, propostaId)
+  activate TrocaSvc
+  TrocaSvc -> UsFigRepo : liberarReservaProponente(proponente, figurinha)
+  activate UsFigRepo
+  UsFigRepo -> BD : UPDATE usuario_figurinhas SET reservada = reservada - 1
+  activate BD
+  BD --> UsFigRepo : ok
+  deactivate BD
+  UsFigRepo --> TrocaSvc : ok
+  deactivate UsFigRepo
+  TrocaSvc -> TrocaRepo : atualizarStatus(propostaId, 'recusada')
+  activate TrocaRepo
+  TrocaRepo --> TrocaSvc : ok
+  deactivate TrocaRepo
+  TrocaSvc ->> NotifSvc : notificarProponente(proponenteId, "Proposta recusada.")
+  activate NotifSvc
+  NotifSvc --> TrocaSvc : ok
+  deactivate NotifSvc
+  TrocaSvc --> TrocaCtrl : propostaRecusada
+  deactivate TrocaSvc
+  TrocaCtrl --> UI : HTTP 200 OK
+  deactivate TrocaCtrl
+  UI --> Dono : exibirMensagem("Proposta recusada.")
+  deactivate UI
+end
+
+@enduml

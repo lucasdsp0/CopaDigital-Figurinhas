@@ -1,0 +1,148 @@
+@startuml UC-casos-de-uso
+title Sistema FigurinhasCopa Digital - Diagrama de Casos de Uso
+
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam backgroundColor #FAFAFA
+skinparam usecase {
+  BackgroundColor #E8F4FD
+  BorderColor #2980B9
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+}
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #F0C040
+}
+
+left to right direction
+
+actor "Usuário\n(Colecionador)" as Usuario
+actor "Administrador" as Admin
+actor "Sistema de\nPagamento" as SistemaPagamento
+actor "Sistema de\nNotificação" as SistemaNotificacao
+
+rectangle "FigurinhasCopa Digital" {
+
+  ' =================== AUTENTICAÇÃO ===================
+  package "Autenticação e Perfil" {
+    usecase "UC-01\nCadastrar Usuário" as UC01
+    usecase "UC-02\nAutenticar Usuário\n(Login)" as UC02
+    usecase "UC-03\nRecuperar Senha" as UC03
+    usecase "UC-04\nEditar Perfil" as UC04
+    usecase "UC-05\nVisualizar Meu Álbum\nDigital" as UC05
+  }
+
+  ' =================== FIGURINHAS ===================
+  package "Gestão de Figurinhas" {
+    usecase "UC-06\nComprar Pacote de\nFigurinhas" as UC06
+    usecase "UC-07\nAbrir Pacote de\nFigurinhas" as UC07
+    usecase "UC-08\nVisualizar Figurinha\nDetalhada" as UC08
+    usecase "UC-09\nColar Figurinha\nno Álbum" as UC09
+    usecase "UC-10\nListar Figurinhas\nRepetidas" as UC10
+  }
+
+  ' =================== MARKETPLACE ===================
+  package "Marketplace de Trocas e Vendas" {
+    usecase "UC-11\nPublicar Oferta\nde Troca" as UC11
+    usecase "UC-12\nBuscar Figurinha\nno Marketplace" as UC12
+    usecase "UC-13\nPropor Troca\nEntre Usuários" as UC13
+    usecase "UC-14\nAceitar / Recusar\nProposta de Troca" as UC14
+    usecase "UC-15\nVender Figurinha\nRepetida" as UC15
+    usecase "UC-16\nComprar Figurinha\nAvulsa" as UC16
+  }
+
+  ' =================== RANKING ===================
+  package "Ranking e Conquistas" {
+    usecase "UC-17\nVisualizar Ranking\nde Colecionadores" as UC17
+    usecase "UC-18\nCompartilhar\nConquista" as UC18
+  }
+
+  ' =================== ADMIN ===================
+  package "Administração" {
+    usecase "UC-19\nGerenciar Catálogo\nde Figurinhas" as UC19
+    usecase "UC-20\nGerenciar Usuários\ne Moderação" as UC20
+    usecase "UC-21\nGerar Relatórios\nde Vendas" as UC21
+  }
+
+  ' =================== SUPORTE ===================
+  package "Notificações" {
+    usecase "UC-22\nReceber Notificação\nde Troca / Oferta" as UC22
+  }
+
+  ' =================== INCLUDES E EXTENDS ===================
+
+  ' UC01 inclui validação de e-mail
+  UC01 ..> UC03 : <<extend>>\n[recuperar senha]
+
+  ' Login é pré-requisito de várias ações
+  UC06 ..> UC02 : <<include>>
+  UC07 ..> UC02 : <<include>>
+  UC09 ..> UC02 : <<include>>
+  UC11 ..> UC02 : <<include>>
+  UC13 ..> UC02 : <<include>>
+  UC15 ..> UC02 : <<include>>
+  UC16 ..> UC02 : <<include>>
+  UC04 ..> UC02 : <<include>>
+
+  ' Abrir pacote é pré-condição de colar
+  UC09 ..> UC07 : <<include>>
+
+  ' Ao colar figurinha, verificar se é repetida
+  UC10 ..> UC09 : <<extend>>\n[figurinha repetida]
+
+  ' Vender exige listar repetidas
+  UC15 ..> UC10 : <<include>>
+
+  ' Comprar figurinha avulsa inclui pagamento
+  UC06 ..> SistemaPagamento : <<include>>
+  UC16 ..> SistemaPagamento : <<include>>
+
+  ' Proposta de troca dispara notificação
+  UC13 ..> UC22 : <<include>>
+  UC14 ..> UC22 : <<include>>
+  UC15 ..> UC22 : <<include>>
+
+  ' Compartilhar conquista estende ranking
+  UC18 ..> UC17 : <<extend>>\n[meta atingida]
+}
+
+' =================== ASSOCIAÇÕES DE ATORES ===================
+
+Usuario --> UC01
+Usuario --> UC02
+Usuario --> UC03
+Usuario --> UC04
+Usuario --> UC05
+Usuario --> UC06
+Usuario --> UC07
+Usuario --> UC08
+Usuario --> UC09
+Usuario --> UC10
+Usuario --> UC11
+Usuario --> UC12
+Usuario --> UC13
+Usuario --> UC14
+Usuario --> UC15
+Usuario --> UC16
+Usuario --> UC17
+Usuario --> UC18
+
+Admin --> UC19
+Admin --> UC20
+Admin --> UC21
+Admin --> UC02
+
+SistemaPagamento --> UC06
+SistemaPagamento --> UC16
+
+SistemaNotificacao --> UC22
+
+note top of UC06 : Inclui seleção\nde quantidade\nde pacotes
+
+note top of UC13 : Usuário propõe\nfigurinha + recebe\noutra em troca
+
+note bottom of UC19 : Admin gerencia\ncatálogo da Copa:\njogadores, países,\nfases do torneio
+
+@enduml

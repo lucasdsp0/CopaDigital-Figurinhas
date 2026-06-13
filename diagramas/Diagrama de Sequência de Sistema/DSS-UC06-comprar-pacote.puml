@@ -1,0 +1,54 @@
+@startuml DSS-UC06-comprar-pacote
+title DSS - UC-06: Comprar Pacote de Figurinhas\nSistema FigurinhasCopa Digital (Visao de Sistema)
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+note over Sistema
+  <<Sistema>>
+  FigurinhasCopa Digital
+  (caixa preta)
+end note
+
+actor "Usuario" as U
+participant "Sistema\nFigurinhasCopa" as Sistema
+
+U -> Sistema : acessarLoja()
+activate Sistema
+Sistema --> U : exibirPacotesDisponiveis(listaPacotes)
+deactivate Sistema
+
+U -> Sistema : selecionarPacote(tipoPacote, quantidade)
+activate Sistema
+Sistema --> U : exibirResumoCompra(valorTotal, descricao)
+deactivate Sistema
+
+U -> Sistema : confirmarPagamento(metodoPagamento, dadosPagamento)
+activate Sistema
+
+alt Pagamento aprovado
+  Sistema --> U : confirmarCompra(pacoteIds, mensagem: "Compra aprovada!")
+else Pagamento recusado
+  Sistema --> U : notificarErro("Pagamento nao aprovado. Verifique seus dados.")
+end
+
+deactivate Sistema
+
+U -> Sistema : abrirPacote(pacoteId)
+activate Sistema
+Sistema --> U : exibirFigurinhasSorteadas(figurinhas[5], raridades)
+deactivate Sistema
+
+@enduml

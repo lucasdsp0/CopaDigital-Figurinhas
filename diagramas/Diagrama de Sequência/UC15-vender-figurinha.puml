@@ -1,0 +1,106 @@
+@startuml UC15-vender-figurinha
+title UC-15: Vender Figurinha Repetida\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário\n(Vendedor)" as Vendedor
+participant "Interface\nWeb/Mobile" as UI
+participant "MarketplaceController" as MktCtrl
+participant "AuthMiddleware" as AuthMW
+participant "VendaService" as VendaSvc
+participant "PrecificacaoService" as PrecSvc
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+participant "OfertaRepository" as OfertaRepo
+participant "NotificacaoService" as NotifSvc
+database "Banco de Dados" as BD
+
+note over Vendedor, UI : Pré-condição: usuário tem\nfigurinhas repetidas (UC-10)
+
+Vendedor -> UI : selecionarFigurinhaParaVender(figurinhaId)
+activate UI
+
+UI -> MktCtrl : GET /api/marketplace/sugestao-preco/{figurinhaId}
+activate MktCtrl
+MktCtrl -> PrecSvc : sugerirPreco(figurinhaId)
+activate PrecSvc
+PrecSvc -> BD : SELECT AVG(preco), MIN(preco), MAX(preco)\nFROM historico_vendas\nWHERE figurinha_id=?\n  AND vendida_em > NOW() - INTERVAL 7 DAYS
+activate BD
+BD --> PrecSvc : { media: 15.00, min: 8.00, max: 30.00 }
+deactivate BD
+PrecSvc --> MktCtrl : precoSugerido
+deactivate PrecSvc
+MktCtrl --> UI : HTTP 200 OK { precoSugerido, faixa }
+deactivate MktCtrl
+UI --> Vendedor : exibirFormularioVenda(precoSugerido)
+deactivate UI
+
+Vendedor -> UI : definirPrecoEPublicar(\n  figurinhaId, preco, quantidade)
+activate UI
+
+UI -> MktCtrl : POST /api/marketplace/vender\n{ figurinhaId, preco, quantidade }
+activate MktCtrl
+
+MktCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> MktCtrl : tokenValido(vendedorId)
+deactivate AuthMW
+
+MktCtrl -> VendaSvc : publicarAnuncioVenda(\n  vendedorId, figurinhaId, preco, qtd)
+activate VendaSvc
+
+VendaSvc -> UsFigRepo : verificarDisponibilidade(\n  vendedorId, figurinhaId, qtd)
+activate UsFigRepo
+UsFigRepo -> BD : SELECT (quantidade - reservada - 1) AS disponivel\nFROM usuario_figurinhas\nWHERE usuario_id=? AND figurinha_id=?\n  AND colada=true
+activate BD
+BD --> UsFigRepo : { disponivel: 2 }
+deactivate BD
+UsFigRepo --> VendaSvc : disponibilidadeOk
+deactivate UsFigRepo
+
+VendaSvc -> UsFigRepo : reservarParaVenda(\n  vendedorId, figurinhaId, qtd)
+activate UsFigRepo
+UsFigRepo -> BD : UPDATE usuario_figurinhas\nSET reservada = reservada + ?\nWHERE usuario_id=? AND figurinha_id=?
+activate BD
+BD --> UsFigRepo : ok
+deactivate BD
+UsFigRepo --> VendaSvc : reservada
+deactivate UsFigRepo
+
+VendaSvc -> OfertaRepo : criarAnuncio(\n  vendedorId, figurinhaId, preco, qtd, tipo:'venda')
+activate OfertaRepo
+OfertaRepo -> BD : INSERT INTO ofertas_marketplace\n(vendedor_id, figurinha_id, preco, qtd, tipo, status)\nVALUES (?, ?, ?, ?, 'venda', 'ativa')
+activate BD
+BD --> OfertaRepo : anuncioId
+deactivate BD
+OfertaRepo --> VendaSvc : anuncioCriado
+deactivate OfertaRepo
+
+VendaSvc ->> NotifSvc : notificarInteressados(\n  figurinhaId, "Nova figurinha à venda!")
+activate NotifSvc
+note right of NotifSvc : Notifica usuários que\nestão buscando esta figurinha
+NotifSvc --> VendaSvc : ok
+deactivate NotifSvc
+
+VendaSvc --> MktCtrl : anuncioPublicado(anuncioId)
+deactivate VendaSvc
+
+MktCtrl --> UI : HTTP 201 Created\n{ anuncioId, status: "ativo" }
+deactivate MktCtrl
+
+UI --> Vendedor : exibirConfirmacao(\n"Figurinha anunciada por R$ " + preco)
+deactivate UI
+
+@enduml

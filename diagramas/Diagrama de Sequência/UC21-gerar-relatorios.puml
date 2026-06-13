@@ -1,0 +1,107 @@
+@startuml UC21-gerar-relatorios
+title UC-21: Gerar Relatórios de Vendas (Admin)\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Administrador" as Admin
+participant "Painel\nAdministrativo" as AdminUI
+participant "RelatorioController" as RelCtrl
+participant "AdminAuthMiddleware" as AdminMW
+participant "RelatorioService" as RelSvc
+participant "VendaRepository" as VendaRepo
+participant "ExportacaoService" as ExportSvc
+database "Banco de Dados" as BD
+
+Admin -> AdminUI : acessarRelatorios()
+activate AdminUI
+
+AdminUI -> RelCtrl : GET /admin/api/relatorios/vendas\n?periodo=mensal&mes=2026-06
+activate RelCtrl
+
+RelCtrl -> AdminMW : verificarPermissaoAdmin(jwtToken)
+activate AdminMW
+AdminMW --> RelCtrl : adminAutenticado
+deactivate AdminMW
+
+RelCtrl -> RelSvc : gerarRelatorioVendas(periodo, mes)
+activate RelSvc
+
+RelSvc -> VendaRepo : buscarVendasPorPeriodo(dataInicio, dataFim)
+activate VendaRepo
+VendaRepo -> BD : SELECT DATE(v.criado_em) AS data,\n  COUNT(*) AS total_transacoes,\n  SUM(v.valor) AS receita_total,\n  COUNT(DISTINCT v.comprador_id) AS compradores_unicos\nFROM vendas v\nWHERE v.criado_em BETWEEN ? AND ?\n  AND v.status = 'concluida'\nGROUP BY DATE(v.criado_em)\nORDER BY data
+activate BD
+BD --> VendaRepo : vendasDiarias
+deactivate BD
+VendaRepo --> RelSvc : vendasDiarias
+deactivate VendaRepo
+
+RelSvc -> VendaRepo : buscarTopFigurinhas(dataInicio, dataFim, limite:10)
+activate VendaRepo
+VendaRepo -> BD : SELECT f.nome, f.raridade,\n  COUNT(*) AS qtd_vendas,\n  SUM(v.valor) AS receita\nFROM vendas v\nJOIN figurinhas f ON f.id = v.figurinha_id\nWHERE v.criado_em BETWEEN ? AND ?\nGROUP BY f.id\nORDER BY receita DESC\nLIMIT 10
+activate BD
+BD --> VendaRepo : topFigurinhas
+deactivate BD
+VendaRepo --> RelSvc : topFigurinhas
+deactivate VendaRepo
+
+RelSvc -> VendaRepo : buscarVendasPorTipo(dataInicio, dataFim)
+activate VendaRepo
+VendaRepo -> BD : SELECT tipo, COUNT(*) AS qtd,\n  SUM(valor) AS total\nFROM vendas\nWHERE criado_em BETWEEN ? AND ?\nGROUP BY tipo
+activate BD
+BD --> VendaRepo : vendasPorTipo
+deactivate BD
+VendaRepo --> RelSvc : vendasPorTipo
+deactivate VendaRepo
+
+RelSvc -> RelSvc : compilarRelatorio(\n  vendasDiarias, topFigurinhas, vendasPorTipo)
+activate RelSvc
+RelSvc --> RelSvc : relatorio { resumo, graficos, tabelas }
+deactivate RelSvc
+
+RelSvc --> RelCtrl : relatorio
+deactivate RelSvc
+
+RelCtrl --> AdminUI : HTTP 200 OK { relatorio }
+deactivate RelCtrl
+
+AdminUI --> Admin : exibirDashboardRelatorio(\n  graficos, tabelas, KPIs)
+deactivate AdminUI
+
+== Exportar Relatório ==
+
+Admin -> AdminUI : clicarExportar(formato:"PDF")
+activate AdminUI
+
+AdminUI -> RelCtrl : POST /admin/api/relatorios/exportar\n{ relatorioId, formato: "PDF" }
+activate RelCtrl
+
+RelCtrl -> AdminMW : verificarPermissaoAdmin(jwtToken)
+activate AdminMW
+AdminMW --> RelCtrl : ok
+deactivate AdminMW
+
+RelCtrl -> ExportSvc : exportarPDF(relatorio)
+activate ExportSvc
+ExportSvc --> RelCtrl : arquivoPDF(bytes, nomeArquivo)
+deactivate ExportSvc
+
+RelCtrl --> AdminUI : HTTP 200 OK\nContent-Disposition: attachment;\n  filename="relatorio_vendas_jun2026.pdf"
+deactivate RelCtrl
+
+AdminUI --> Admin : iniciarDownload(PDF)
+deactivate AdminUI
+
+@enduml

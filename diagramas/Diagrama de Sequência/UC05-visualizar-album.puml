@@ -1,0 +1,108 @@
+@startuml UC05-visualizar-album
+title UC-05: Visualizar Meu Álbum Digital\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "AlbumController" as AlbumCtrl
+participant "AuthMiddleware" as AuthMW
+participant "AlbumService" as AlbumSvc
+participant "FigurinhaRepository" as FigRepo
+participant "CacheService" as Cache
+database "Banco de Dados" as BD
+
+Usuario -> UI : acessarMeuAlbum()
+activate UI
+
+UI -> AlbumCtrl : GET /api/album/meu-album?filtro=todos
+activate AlbumCtrl
+
+AlbumCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> AlbumCtrl : tokenValido(userId)
+deactivate AuthMW
+
+AlbumCtrl -> Cache : buscarAlbumCache(userId)
+activate Cache
+Cache --> AlbumCtrl : cacheMiss
+deactivate Cache
+
+AlbumCtrl -> AlbumSvc : carregarAlbum(userId, filtro)
+activate AlbumSvc
+
+AlbumSvc -> FigRepo : buscarFigurinhasDoUsuario(userId)
+activate FigRepo
+FigRepo -> BD : SELECT f.*, uf.colada, uf.quantidade\nFROM figurinhas f\nJOIN usuario_figurinhas uf ON uf.figurinha_id = f.id\nWHERE uf.usuario_id = ?
+activate BD
+BD --> FigRepo : listaFigurinhas
+deactivate BD
+FigRepo --> AlbumSvc : figurinhas
+deactivate FigRepo
+
+AlbumSvc -> AlbumSvc : calcularProgressoAlbum(figurinhas)
+activate AlbumSvc
+AlbumSvc --> AlbumSvc : progresso { total, coladas, porcentagem }
+deactivate AlbumSvc
+
+AlbumSvc -> AlbumSvc : agruparPorSelecao(figurinhas)
+activate AlbumSvc
+AlbumSvc --> AlbumSvc : figurinhasAgrupadas
+deactivate AlbumSvc
+
+AlbumSvc --> AlbumCtrl : album { figurinhas, progresso, grupos }
+deactivate AlbumSvc
+
+AlbumCtrl -> Cache : salvarAlbumCache(userId, album, ttl: 300s)
+activate Cache
+Cache --> AlbumCtrl : cacheAtualizado
+deactivate Cache
+
+AlbumCtrl --> UI : HTTP 200 OK\n{ album, progresso, grupos }
+deactivate AlbumCtrl
+
+UI --> Usuario : renderizarAlbumDigital(\n  figurinhas, progresso, grupos)
+deactivate UI
+
+== Filtrar Álbum ==
+
+Usuario -> UI : selecionarFiltro("faltando")
+activate UI
+
+UI -> AlbumCtrl : GET /api/album/meu-album?filtro=faltando
+activate AlbumCtrl
+AlbumCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> AlbumCtrl : tokenValido(userId)
+deactivate AuthMW
+AlbumCtrl -> AlbumSvc : filtrarFigurinhasFaltando(userId)
+activate AlbumSvc
+AlbumSvc -> FigRepo : buscarFigurinhasFaltando(userId)
+activate FigRepo
+FigRepo -> BD : SELECT f.* FROM figurinhas f\nWHERE f.id NOT IN (\n  SELECT figurinha_id FROM usuario_figurinhas\n  WHERE usuario_id = ?\n)
+activate BD
+BD --> FigRepo : figurinhasFaltando
+deactivate BD
+FigRepo --> AlbumSvc : lista
+deactivate FigRepo
+AlbumSvc --> AlbumCtrl : figurinhasFaltando
+deactivate AlbumSvc
+AlbumCtrl --> UI : HTTP 200 OK\n{ figurinhasFaltando }
+deactivate AlbumCtrl
+UI --> Usuario : atualizarVisualizacaoAlbum(figurinhasFaltando)
+deactivate UI
+
+@enduml

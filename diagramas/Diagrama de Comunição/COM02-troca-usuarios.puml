@@ -1,0 +1,56 @@
+@startuml COM02-troca-usuarios
+title Diagrama de Comunicacao: Troca Entre Usuarios\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam participant {
+  BorderColor #2980B9
+  BackgroundColor #EBF5FB
+}
+skinparam ArrowColor #2C3E50
+skinparam ActorBorderColor #2C3E50
+skinparam ActorBackgroundColor #D5E8D4
+
+participant "Proponente" as PROP
+participant "Dono da Oferta" as DONO
+participant "TrocaController" as TC
+participant "TrocaService" as TS
+participant "UsuarioFigurinhaRepo" as UFR
+participant "TrocaRepository" as TR
+participant "NotificacaoService" as NOTIF
+
+note over PROP, DONO : 1. Inicio: Proponente\nviu oferta no Marketplace
+
+PROP -> TC : 2. POST /trocas/propor\n{ofertaId, minhaFigurinhaId}
+TC -> TS : 3. criarProposta(proponenteId, ofertaId, minhaFigurinhaId)
+TS -> UFR : 4. verificarPosse(proponenteId, minhaFigurinhaId)
+UFR --> TS : 5. posseValidada {quantidade: 2, colada: true}
+TS -> UFR : 6. reservarFigurinha(proponenteId, minhaFigurinhaId)
+UFR --> TS : 7. figurinhaReservada
+TS -> TR : 8. salvarProposta(proponenteId, ofertaId, status:pendente)
+TR --> TS : 9. propostaId
+TS ->> NOTIF : 10. [async] notificarDono(donoId, msg)
+TS --> TC : 11. propostaCriada(propostaId)
+TC --> PROP : 12. HTTP 201 Created {propostaId}
+
+note over DONO : Dono recebe\nnotificacao push/email
+
+DONO -> TC : 13. PUT /trocas/{id}/aceitar
+TC -> TS : 14. aceitarProposta(donoId, propostaId)
+TS -> UFR : 15. transferirFigurinhas(dono-to-proponente, proponente-to-dono)
+UFR --> TS : 16. transferenciaConcluida [ACID]
+TS -> TR : 17. marcarComoAceita(propostaId)
+TR --> TS : 18. ok
+TS ->> NOTIF : 19. [async] notificarProponente("Troca aceita!")
+TS --> TC : 20. trocaRealizada
+TC --> DONO : 21. HTTP 200 OK {mensagem: "Troca concluida!"}
+
+note right of UFR
+  Transferencia atomica ACID:
+  BEGIN TRANSACTION
+  Remove fig do dono,
+  Adiciona ao proponente,
+  Remove fig do proponente,
+  Adiciona ao dono. COMMIT
+end note
+
+@enduml

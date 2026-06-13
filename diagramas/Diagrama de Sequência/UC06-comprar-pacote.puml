@@ -1,0 +1,118 @@
+@startuml UC06-comprar-pacote
+title UC-06: Comprar Pacote de Figurinhas\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "LojaController" as LojaCtrl
+participant "AuthMiddleware" as AuthMW
+participant "PacoteService" as PacoteSvc
+participant "PagamentoService" as PagtoSvc
+participant "PedidoRepository" as PedidoRepo
+participant "API Pagamento\n(Gateway)" as GatewayPgto
+database "Banco de Dados" as BD
+
+Usuario -> UI : acessarLoja()
+activate UI
+UI -> LojaCtrl : GET /api/loja/pacotes
+activate LojaCtrl
+LojaCtrl -> PacoteSvc : listarPacotesDisponiveis()
+activate PacoteSvc
+PacoteSvc --> LojaCtrl : listaPacotes
+deactivate PacoteSvc
+LojaCtrl --> UI : HTTP 200 OK { pacotes }
+deactivate LojaCtrl
+UI --> Usuario : exibirPacotesDisponiveis()
+deactivate UI
+
+Usuario -> UI : selecionarPacote(tipoPacote, quantidade)
+activate UI
+
+UI -> LojaCtrl : POST /api/loja/iniciar-compra(pacoteId, quantidade)
+activate LojaCtrl
+
+LojaCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> LojaCtrl : tokenValido(userId)
+deactivate AuthMW
+
+LojaCtrl -> PacoteSvc : calcularValorTotal(pacoteId, quantidade)
+activate PacoteSvc
+PacoteSvc --> LojaCtrl : valorTotal, resumoCompra
+deactivate PacoteSvc
+
+LojaCtrl --> UI : HTTP 200 OK\n{ resumoCompra, valorTotal }
+deactivate LojaCtrl
+UI --> Usuario : exibirResumoCompra(resumo)
+deactivate UI
+
+Usuario -> UI : confirmarPagamento(metodoPagamento, dadosCartao)
+activate UI
+
+UI -> LojaCtrl : POST /api/loja/confirmar-compra(pedido, pagamento)
+activate LojaCtrl
+
+LojaCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> LojaCtrl : tokenValido(userId)
+deactivate AuthMW
+
+LojaCtrl -> PagtoSvc : processarPagamento(userId, valorTotal, metodoPagamento)
+activate PagtoSvc
+
+PagtoSvc -> GatewayPgto : POST /charges\n{ valor, metodo, token }
+activate GatewayPgto
+GatewayPgto --> PagtoSvc : { status: "aprovado", transacaoId }
+deactivate GatewayPgto
+
+PagtoSvc -> PedidoRepo : salvarPedido(userId, pacotes, transacaoId, status:"pago")
+activate PedidoRepo
+PedidoRepo -> BD : INSERT INTO pedidos (...)
+activate BD
+BD --> PedidoRepo : pedidoId
+deactivate BD
+PedidoRepo --> PagtoSvc : pedidoCriado
+deactivate PedidoRepo
+
+PagtoSvc --> LojaCtrl : pagamentoAprovado(pedidoId)
+deactivate PagtoSvc
+
+LojaCtrl -> PacoteSvc : liberarPacotes(userId, pedidoId, quantidade)
+activate PacoteSvc
+PacoteSvc -> BD : INSERT INTO pacotes_usuario (userId, pedidoId, status:'nao_aberto')
+activate BD
+BD --> PacoteSvc : pacotesSalvos
+deactivate BD
+PacoteSvc --> LojaCtrl : pacotesLiberados
+deactivate PacoteSvc
+
+LojaCtrl --> UI : HTTP 200 OK\n{ pedidoId, mensagem: "Compra aprovada!" }
+deactivate LojaCtrl
+
+UI --> Usuario : exibirConfirmacaoCompra(\n"Pacotes disponíveis para abertura!")
+deactivate UI
+
+== Fluxo Alternativo: Pagamento Recusado ==
+
+alt Pagamento recusado pelo gateway
+  GatewayPgto --> PagtoSvc : { status: "recusado", motivo }
+  PagtoSvc --> LojaCtrl : pagamentoRecusado(motivo)
+  LojaCtrl --> UI : HTTP 402 Payment Required
+  UI --> Usuario : exibirErro("Pagamento não aprovado.\nVerifique seus dados.")
+end
+
+@enduml

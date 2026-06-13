@@ -1,0 +1,103 @@
+@startuml UC17-visualizar-ranking
+title UC-17: Visualizar Ranking de Colecionadores\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "RankingController" as RankCtrl
+participant "AuthMiddleware" as AuthMW
+participant "RankingService" as RankSvc
+participant "CacheService" as Cache
+participant "RankingRepository" as RankRepo
+database "Banco de Dados" as BD
+
+Usuario -> UI : acessarRanking()
+activate UI
+
+UI -> RankCtrl : GET /api/ranking?tipo=global&pagina=1
+activate RankCtrl
+
+RankCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> RankCtrl : tokenValido(userId)
+deactivate AuthMW
+
+RankCtrl -> Cache : buscarRankingCache("global:1")
+activate Cache
+Cache --> RankCtrl : cacheMiss
+deactivate Cache
+
+RankCtrl -> RankSvc : calcularRanking(tipo:"global", pagina:1, userId)
+activate RankSvc
+
+RankSvc -> RankRepo : buscarTopColecionadores(limite:50)
+activate RankRepo
+RankRepo -> BD : SELECT u.id, u.nome, u.foto,\n  COUNT(uf.figurinha_id) AS total_coladas,\n  SUM(CASE WHEN f.raridade='lendaria' THEN 1 ELSE 0 END) AS lendarias,\n  (SELECT pontos FROM pontuacoes WHERE usuario_id=u.id) AS pontos\nFROM usuarios u\nJOIN usuario_figurinhas uf ON uf.usuario_id=u.id\nJOIN figurinhas f ON f.id=uf.figurinha_id\nWHERE uf.colada=true\nGROUP BY u.id\nORDER BY total_coladas DESC, lendarias DESC\nLIMIT 50
+activate BD
+BD --> RankRepo : topColecionadores
+deactivate BD
+RankRepo --> RankSvc : ranking
+deactivate RankRepo
+
+RankSvc -> RankRepo : buscarPosicaoUsuario(userId)
+activate RankRepo
+RankRepo -> BD : SELECT posicao FROM ranking_cache\nWHERE usuario_id = ?
+activate BD
+BD --> RankRepo : { posicao: 147 }
+deactivate BD
+RankRepo --> RankSvc : posicaoUsuario
+deactivate RankRepo
+
+RankSvc -> RankSvc : montarResultado(ranking, posicaoUsuario)
+activate RankSvc
+RankSvc --> RankSvc : resultado
+deactivate RankSvc
+
+RankSvc --> RankCtrl : rankingCompleto\n{ top50, posicaoUsuario, totalParticipantes }
+deactivate RankSvc
+
+RankCtrl -> Cache : salvarRankingCache("global:1", ranking, ttl:300s)
+activate Cache
+Cache --> RankCtrl : ok
+deactivate Cache
+
+RankCtrl --> UI : HTTP 200 OK\n{ ranking, posicaoUsuario }
+deactivate RankCtrl
+
+UI --> Usuario : exibirRankingComDestaque(\n  top50, minhaposicao: 147)
+deactivate UI
+
+== Filtrar por Amigos ==
+
+Usuario -> UI : filtrarPorAmigos()
+activate UI
+UI -> RankCtrl : GET /api/ranking?tipo=amigos
+activate RankCtrl
+RankCtrl -> RankSvc : rankingAmigos(userId)
+activate RankSvc
+RankSvc -> BD : SELECT u.nome, uf.coladas\nFROM amizades a\nJOIN usuarios u ON u.id = a.amigo_id\nJOIN usuario_stats uf ON uf.usuario_id = u.id\nWHERE a.usuario_id = ?\nORDER BY uf.coladas DESC
+activate BD
+BD --> RankSvc : rankingAmigos
+deactivate BD
+RankSvc --> RankCtrl : rankingAmigos
+deactivate RankSvc
+RankCtrl --> UI : HTTP 200 OK { rankingAmigos }
+deactivate RankCtrl
+UI --> Usuario : exibirRankingAmigos()
+deactivate UI
+
+@enduml

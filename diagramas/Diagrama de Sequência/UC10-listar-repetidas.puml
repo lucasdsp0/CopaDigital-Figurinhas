@@ -1,0 +1,80 @@
+@startuml UC10-listar-repetidas
+title UC-10: Listar Figurinhas Repetidas\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "FigurinhaController" as FigCtrl
+participant "AuthMiddleware" as AuthMW
+participant "FigurinhaService" as FigSvc
+participant "MarketplaceService" as MktSvc
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+database "Banco de Dados" as BD
+
+Usuario -> UI : acessarMinhasRepetidas()
+activate UI
+
+UI -> FigCtrl : GET /api/figurinhas/repetidas?ordenar=raridade
+activate FigCtrl
+
+FigCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> FigCtrl : tokenValido(userId)
+deactivate AuthMW
+
+FigCtrl -> FigSvc : listarRepetidas(userId, ordenacao)
+activate FigSvc
+
+FigSvc -> UsFigRepo : buscarFigurinhasRepetidas(userId)
+activate UsFigRepo
+UsFigRepo -> BD : SELECT f.id, f.nome, f.raridade,\n  uf.quantidade, uf.colada,\n  (uf.quantidade - 1) AS repetidas\nFROM usuario_figurinhas uf\nJOIN figurinhas f ON f.id = uf.figurinha_id\nWHERE uf.usuario_id = ?\n  AND uf.colada = true\n  AND uf.quantidade > 1\nORDER BY f.raridade DESC
+activate BD
+BD --> UsFigRepo : listaRepetidas
+deactivate BD
+UsFigRepo --> FigSvc : figurinhasRepetidas
+deactivate UsFigRepo
+
+FigSvc -> MktSvc : consultarPrecosMercado(figurinhasIds)
+activate MktSvc
+MktSvc -> BD : SELECT figurinha_id,\n  AVG(preco) AS preco_medio\nFROM ofertas_marketplace\nWHERE figurinha_id IN (?)\n  AND status = 'ativa'\nGROUP BY figurinha_id
+activate BD
+BD --> MktSvc : precosMercado
+deactivate BD
+MktSvc --> FigSvc : precosMercado
+deactivate MktSvc
+
+FigSvc -> FigSvc : enriquecerComPrecos(\n  figurinhasRepetidas, precosMercado)
+activate FigSvc
+FigSvc --> FigSvc : listaEnriquecida
+deactivate FigSvc
+
+FigSvc --> FigCtrl : figurinhasRepetidas\n{ id, nome, raridade, qtdRepetidas, precoMedio }
+deactivate FigSvc
+
+FigCtrl --> UI : HTTP 200 OK\n{ repetidas, totalRepetidas }
+deactivate FigCtrl
+
+UI --> Usuario : exibirListaRepetidas(\n  figurinhas, opções: [Trocar | Vender])
+deactivate UI
+
+== Ação a partir da lista ==
+Usuario -> UI : selecionarAcao(figurinhaId, "vender")
+activate UI
+UI --> Usuario : redirecionarParaVenda(figurinhaId)
+deactivate UI
+
+@enduml

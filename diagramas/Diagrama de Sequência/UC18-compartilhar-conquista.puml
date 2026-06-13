@@ -1,0 +1,115 @@
+@startuml UC18-compartilhar-conquista
+title UC-18: Compartilhar Conquista\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "ConquistaController" as ConqCtrl
+participant "AuthMiddleware" as AuthMW
+participant "ConquistaService" as ConqSvc
+participant "ImagemService" as ImgSvc
+participant "ConquistaRepository" as ConqRepo
+participant "API Redes Sociais\n(Instagram/X)" as RedesSociais
+database "Banco de Dados" as BD
+
+note over Usuario, UI : Pré-condição: usuário atingiu\numa meta no álbum (UC-17)
+
+Usuario -> UI : acessarMinhasConquistas()
+activate UI
+UI -> ConqCtrl : GET /api/conquistas/minhas
+activate ConqCtrl
+ConqCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> ConqCtrl : tokenValido(userId)
+deactivate AuthMW
+ConqCtrl -> ConqSvc : listarConquistas(userId)
+activate ConqSvc
+ConqSvc -> ConqRepo : findByUsuarioId(userId)
+activate ConqRepo
+ConqRepo -> BD : SELECT c.*, uc.desbloqueada_em\nFROM conquistas c\nJOIN usuario_conquistas uc ON uc.conquista_id=c.id\nWHERE uc.usuario_id=?
+activate BD
+BD --> ConqRepo : conquistas
+deactivate BD
+ConqRepo --> ConqSvc : conquistas
+deactivate ConqRepo
+ConqSvc --> ConqCtrl : conquistas
+deactivate ConqSvc
+ConqCtrl --> UI : HTTP 200 OK { conquistas }
+deactivate ConqCtrl
+UI --> Usuario : exibirMinhasConquistas(badges)
+deactivate UI
+
+== Compartilhar ==
+
+Usuario -> UI : clicarCompartilharConquista(\n  conquistaId, plataforma:"instagram")
+activate UI
+
+UI -> ConqCtrl : POST /api/conquistas/{conquistaId}/compartilhar\n{ plataforma: "instagram" }
+activate ConqCtrl
+
+ConqCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> ConqCtrl : tokenValido(userId)
+deactivate AuthMW
+
+ConqCtrl -> ConqSvc : gerarConteudoCompartilhamento(\n  userId, conquistaId, plataforma)
+activate ConqSvc
+
+ConqSvc -> ConqRepo : buscarConquista(conquistaId)
+activate ConqRepo
+ConqRepo -> BD : SELECT * FROM conquistas\nWHERE id=?
+activate BD
+BD --> ConqRepo : conquista
+deactivate BD
+ConqRepo --> ConqSvc : conquista
+deactivate ConqRepo
+
+ConqSvc -> ImgSvc : gerarImagemConquista(\n  usuario, conquista, progresso)
+activate ImgSvc
+ImgSvc --> ConqSvc : imagemBase64(card personalizado)
+deactivate ImgSvc
+
+ConqSvc -> ConqSvc : montarTextoCompartilhamento(\n  conquista, progresso, hashtags)
+activate ConqSvc
+ConqSvc --> ConqSvc : texto, imagem, hashtags
+deactivate ConqSvc
+
+ConqSvc ->> RedesSociais : publicar(token, texto, imagem, plataforma)
+activate RedesSociais
+note right of RedesSociais : Chamada assíncrona\nvia OAuth2
+RedesSociais --> ConqSvc : { postId, url }
+deactivate RedesSociais
+
+ConqSvc -> ConqRepo : registrarCompartilhamento(\n  userId, conquistaId, plataforma)
+activate ConqRepo
+ConqRepo -> BD : INSERT INTO compartilhamentos (...)
+activate BD
+BD --> ConqRepo : ok
+deactivate BD
+ConqRepo --> ConqSvc : ok
+deactivate ConqRepo
+
+ConqSvc --> ConqCtrl : compartilhado(urlPost)
+deactivate ConqSvc
+
+ConqCtrl --> UI : HTTP 200 OK\n{ urlPost, mensagem: "Compartilhado!" }
+deactivate ConqCtrl
+
+UI --> Usuario : exibirLinkDoPost(urlPost)
+deactivate UI
+
+@enduml

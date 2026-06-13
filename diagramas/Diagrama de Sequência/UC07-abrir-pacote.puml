@@ -1,0 +1,111 @@
+@startuml UC07-abrir-pacote
+title UC-07: Abrir Pacote de Figurinhas\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "PacoteController" as PacoteCtrl
+participant "AuthMiddleware" as AuthMW
+participant "PacoteService" as PacoteSvc
+participant "SorteioService" as SorteioSvc
+participant "FigurinhaRepository" as FigRepo
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+database "Banco de Dados" as BD
+
+Usuario -> UI : acessarMeusPacotes()
+activate UI
+UI -> PacoteCtrl : GET /api/pacotes/meus-pacotes
+activate PacoteCtrl
+PacoteCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> PacoteCtrl : tokenValido(userId)
+deactivate AuthMW
+PacoteCtrl -> PacoteSvc : listarPacotesNaoAbertos(userId)
+activate PacoteSvc
+PacoteSvc --> PacoteCtrl : pacotesDisponiveis
+deactivate PacoteSvc
+PacoteCtrl --> UI : HTTP 200 OK { pacotes }
+deactivate PacoteCtrl
+UI --> Usuario : exibirPacotesDisponiveis(pacotes)
+deactivate UI
+
+Usuario -> UI : clicarAbrirPacote(pacoteId)
+activate UI
+
+UI -> PacoteCtrl : POST /api/pacotes/abrir(pacoteId)
+activate PacoteCtrl
+
+PacoteCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> PacoteCtrl : tokenValido(userId)
+deactivate AuthMW
+
+PacoteCtrl -> PacoteSvc : abrirPacote(userId, pacoteId)
+activate PacoteSvc
+
+PacoteSvc -> PacoteSvc : validarPropriedadePacote(userId, pacoteId)
+activate PacoteSvc
+PacoteSvc --> PacoteSvc : pacoteValido: true
+deactivate PacoteSvc
+
+PacoteSvc -> SorteioSvc : sortearFigurinhas(tipoPacote, qtdFigurinhas: 5)
+activate SorteioSvc
+
+SorteioSvc -> FigRepo : buscarFigurinhasDisponiveis(tipoPacote)
+activate FigRepo
+FigRepo -> BD : SELECT * FROM figurinhas\nWHERE tipo = ? AND ativo = true
+activate BD
+BD --> FigRepo : todasFigurinhas
+deactivate BD
+FigRepo --> SorteioSvc : todasFigurinhas
+deactivate FigRepo
+
+SorteioSvc -> SorteioSvc : aplicarPesoPorRaridade(\n  comum: 60%, rara: 25%,\n  lendária: 10%, brilhante: 5%)
+activate SorteioSvc
+SorteioSvc --> SorteioSvc : figurinhasSelecionadas[5]
+deactivate SorteioSvc
+
+SorteioSvc --> PacoteSvc : figurinhasSorteadas[5]
+deactivate SorteioSvc
+
+PacoteSvc -> UsFigRepo : adicionarFigurinhasAoUsuario(userId, figurinhasSorteadas)
+activate UsFigRepo
+UsFigRepo -> BD : INSERT/UPDATE usuario_figurinhas\n(userId, figurinhaId, quantidade++)
+activate BD
+BD --> UsFigRepo : figurinhasAdicionadas
+deactivate BD
+UsFigRepo --> PacoteSvc : ok
+deactivate UsFigRepo
+
+PacoteSvc -> PacoteSvc : marcarPacoteComoAberto(pacoteId)
+activate PacoteSvc
+PacoteSvc -> BD : UPDATE pacotes_usuario\nSET status='aberto', aberto_em=NOW()\nWHERE id = ?
+activate BD
+BD --> PacoteSvc : atualizado
+deactivate BD
+deactivate PacoteSvc
+
+PacoteSvc --> PacoteCtrl : resultado(figurinhasSorteadas)
+deactivate PacoteSvc
+
+PacoteCtrl --> UI : HTTP 200 OK\n{ figurinhas: [...5 cartas] }
+deactivate PacoteCtrl
+
+UI --> Usuario : animarAberturaPacote(\nfigurinhas[5] com raridade)
+deactivate UI
+
+@enduml

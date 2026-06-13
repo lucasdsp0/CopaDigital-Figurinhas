@@ -1,0 +1,89 @@
+@startuml EST02-ciclo-vida-oferta
+title Diagrama de Estados: Ciclo de Vida da Oferta de Troca/Venda\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam state {
+  BackgroundColor #EBF5FB
+  BorderColor #2980B9
+  ArrowColor #2C3E50
+  FontSize 13
+}
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #F0C040
+}
+
+[*] --> Rascunho : usuário inicia criação\nde oferta
+
+state Rascunho {
+  Rascunho : figurinhaId selecionada
+  Rascunho : tipo = indefinido
+  Rascunho : preco = null
+}
+
+Rascunho --> Ativa : usuário confirma publicação /\nfigurinha reservada no inventário
+
+state Ativa {
+  Ativa : status = 'ativa'
+  Ativa : criado_em = timestamp
+  Ativa : expirado = false
+}
+
+state "Com Propostas" as ComProp {
+  ComProp : status = 'ativa'
+  ComProp : propostas > 0
+}
+
+Ativa --> ComProp : proponente envia\nproposta (UC-13) /\ncontador_propostas++
+
+ComProp --> Ativa : proposta recusada (UC-14) /\ncontador_propostas--
+
+ComProp --> Reservada : dono aceita proposta (UC-14) /\ntransferência iniciada
+
+state Reservada {
+  Reservada : status = 'reservado'
+  Reservada : proposta_aceita_id = X
+}
+
+Reservada --> Concluida : transferência concluída com sucesso /\nfigurinha transferida entre usuários
+
+state Concluida {
+  Concluida : status = 'concluida'
+  Concluida : concluida_em = timestamp
+}
+
+Concluida --> [*]
+
+Ativa --> Expirada : prazo de 30 dias atingido /\nreserva liberada
+
+state Expirada {
+  Expirada : status = 'expirada'
+  Expirada : expirada_em = timestamp
+}
+
+Expirada --> [*]
+
+Ativa --> Cancelada : dono cancela oferta\n(antes de aceitar proposta) /\nreserva liberada
+
+ComProp --> Cancelada : dono cancela oferta /\ntodas propostas recusadas
+
+state Cancelada {
+  Cancelada : status = 'cancelada'
+  Cancelada : cancelada_em = timestamp
+}
+
+Cancelada --> [*]
+
+note right of Reservada
+  Guards:
+  when [pagamento_aprovado == true] → Concluida
+  when [pagamento_falhou == true] → Ativa
+end note
+
+note left of Expirada
+  Job automático verifica
+  diariamente ofertas com
+  mais de 30 dias sem conclusão
+end note
+
+@enduml

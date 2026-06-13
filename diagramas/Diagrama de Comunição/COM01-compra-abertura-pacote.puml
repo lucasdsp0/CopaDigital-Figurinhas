@@ -1,0 +1,49 @@
+@startuml COM01-compra-abertura-pacote
+title Diagrama de Comunicacao: Compra e Abertura de Pacote\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam participant {
+  BorderColor #2980B9
+  BackgroundColor #EBF5FB
+}
+skinparam ArrowColor #2C3E50
+skinparam ActorBorderColor #2C3E50
+skinparam ActorBackgroundColor #D5E8D4
+
+participant "Usuario" as U
+participant "LojaController" as LC
+participant "PacoteService" as PS
+participant "PagamentoService" as PGS
+participant "SorteioService" as SS
+participant "UsuarioFigurinhaRepo" as UFR
+participant "NotificacaoService" as NOTIF
+
+U -> LC : 1. POST /loja/comprar\n{pacoteId, qtd, pagamento}
+LC -> PGS : 2. processarPagamento(valor, metodo)
+PGS --> LC : 3. pagamentoAprovado(transacaoId)
+LC -> PS : 4. liberarPacotes(userId, qtd, transacaoId)
+PS --> LC : 5. pacotesLiberados(pacoteIds[])
+LC --> U : 6. confirmarCompra(pacoteIds)
+U -> LC : 7. POST /pacotes/abrir {pacoteId}
+LC -> PS : 8. abrirPacote(userId, pacoteId)
+PS -> SS : 9. sortearFigurinhas(tipoPacote, qtd:5)
+SS --> PS : 10. figurinhasSorteadas[]{id, raridade, nome}
+PS -> UFR : 11. adicionarFigurinhas(userId, figurinhasSorteadas[])
+UFR --> PS : 12. figurinhasAdicionadas
+PS ->> NOTIF : 13. [async] notificarFigurinhaLendaria(userId, figurinhaId)
+PS --> LC : 14. resultadoAbertura{figurinhas[5]}
+LC --> U : 15. exibirFigurinhas{animacao, cartas[5]}
+
+note right of SS
+  Probabilidades:
+  Comum 60%, Rara 25%
+  Lendaria 10%, Brilhante 5%
+end note
+
+note right of NOTIF
+  Notificacao assincrona.
+  Disparada apenas para
+  figurinhas lendarias.
+end note
+
+@enduml

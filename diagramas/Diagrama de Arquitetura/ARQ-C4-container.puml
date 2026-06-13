@@ -1,0 +1,104 @@
+@startuml ARQ-C4-container
+title Arquitetura C4 - Nivel Container\nSistema FigurinhasCopa Digital
+
+skinparam backgroundColor #FAFAFA
+skinparam rectangle {
+  BorderColor #2C3E50
+  FontSize 12
+}
+skinparam database {
+  BackgroundColor #FAD7A0
+  BorderColor #E67E22
+  FontSize 12
+}
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #D5E8D4
+  FontSize 12
+}
+skinparam node {
+  BackgroundColor #EBF5FB
+  BorderColor #2980B9
+  FontSize 12
+}
+skinparam ArrowColor #2C3E50
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #F0C040
+}
+
+' ── Atores externos ──────────────────────────────────────────────────────────
+actor "Usuario\n(Colecionador)" as User
+actor "Administrador" as Admin
+
+' ── Sistemas externos ─────────────────────────────────────────────────────────
+rectangle "Gateway de\nPagamento\n[Stripe/PagSeguro]" as Pgto #F9EBEA
+rectangle "Firebase FCM\n[Push Notifications]" as FCM #F9EBEA
+rectangle "SendGrid\n[E-mail]" as Email #F9EBEA
+rectangle "Instagram / X API\n[Redes Sociais]" as Social #F9EBEA
+
+' ── Sistema FigurinhasCopa ────────────────────────────────────────────────────
+rectangle "Sistema FigurinhasCopa Digital" #EBF5FB {
+
+  rectangle "App Web\n[React + Vite]\nInterface para navegador" as WebApp #D5E8D4
+  rectangle "App Mobile\n[React Native]\nInterface iOS e Android" as MobileApp #D5E8D4
+
+  rectangle "API Gateway\n[AWS API Gateway]\nRoteamento, JWT,\nRate Limiting" as APIGW #D6EAF8
+
+  rectangle "Back-end\n[Node.js / Express]\nMicrosservicos:\nAuth, Album, Loja,\nMarketplace, Troca,\nRanking, Notificacao,\nAdmin" as Backend #D6EAF8
+
+  rectangle "WebSocket Server\n[Socket.io]\nNotificacoes\nem tempo real" as WSS #D6EAF8
+
+  database "Banco de Dados\n[PostgreSQL 15 - AWS RDS]\nPersistencia principal" as DB
+
+  database "Cache\n[Redis 7 - ElastiCache]\nSessoes, rankings,\ncatalogo" as Cache
+
+  database "Object Storage\n[AWS S3 + CloudFront]\nImagens de figurinhas,\nfotos de perfil, PDFs" as S3
+
+  rectangle "Fila de Mensagens\n[AWS SQS]\nNotificacoes, e-mails,\nrelatorios assincronos" as SQS
+
+}
+
+' ── Relacoes dos usuarios ─────────────────────────────────────────────────────
+User --> WebApp    : usa via navegador\n[HTTPS]
+User --> MobileApp : usa via app\n[HTTPS]
+Admin --> WebApp   : acessa painel\nadministrativo [HTTPS]
+
+' ── Front-end -> Gateway ──────────────────────────────────────────────────────
+WebApp    --> APIGW : chamadas REST\n[HTTPS/JSON]
+MobileApp --> APIGW : chamadas REST\n[HTTPS/JSON]
+WebApp    --> WSS   : conexao tempo real\n[WSS]
+MobileApp --> WSS   : conexao tempo real\n[WSS]
+
+' ── Gateway -> Backend ────────────────────────────────────────────────────────
+APIGW --> Backend : roteia requisicoes\n[HTTP interno]
+
+' ── Backend -> Infraestrutura interna ─────────────────────────────────────────
+Backend --> DB    : leitura e escrita\n[TCP/IP - Prisma ORM]
+Backend --> Cache : leitura e escrita\n[TCP/IP - Redis]
+Backend --> S3    : upload/download\nde arquivos [HTTPS]
+Backend --> SQS   : publica eventos\nassincronos [HTTPS]
+Backend --> WSS   : emite notificacoes\n[interno]
+SQS     --> Backend : consome filas\n[workers]
+
+' ── Backend -> Sistemas externos ─────────────────────────────────────────────
+Backend --> Pgto   : processa cobranças\n[HTTPS/REST]
+Backend --> FCM    : envia push\nnotifications [HTTPS]
+Backend --> Email  : envia e-mails\ntransacionais [HTTPS]
+Backend --> Social : publica conquistas\n[OAuth2/HTTPS]
+
+note bottom of Backend
+  8 microsservicos organizados
+  por dominio de negocio.
+  Deploy em containers Docker
+  no AWS ECS com auto scaling
+  de 2 a 10 instancias.
+end note
+
+note bottom of DB
+  Multi-AZ para
+  alta disponibilidade.
+  Backup automatico diario.
+end note
+
+@enduml

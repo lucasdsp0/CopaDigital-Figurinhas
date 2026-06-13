@@ -1,0 +1,147 @@
+@startuml UC03-recuperar-senha
+title UC-03: Recuperar Senha\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "AuthController" as AuthCtrl
+participant "RecuperacaoSenhaService" as RecSvc
+participant "UsuarioRepository" as UsuarioRepo
+participant "TokenRepository" as TokenRepo
+database "Banco de Dados" as BD
+participant "EmailService" as EmailSvc
+
+== Etapa 1: Solicitação de Recuperação ==
+
+Usuario -> UI : clicarEsqueceuSenha()
+activate UI
+UI --> Usuario : exibirFormularioRecuperacao()
+deactivate UI
+
+Usuario -> UI : informarEmail(email)
+activate UI
+
+UI -> AuthCtrl : POST /api/auth/recuperar-senha(email)
+activate AuthCtrl
+
+AuthCtrl -> RecSvc : solicitarRecuperacao(email)
+activate RecSvc
+
+RecSvc -> UsuarioRepo : buscarPorEmail(email)
+activate UsuarioRepo
+UsuarioRepo -> BD : SELECT id, nome FROM usuarios WHERE email = ?
+activate BD
+BD --> UsuarioRepo : dadosUsuario
+deactivate BD
+UsuarioRepo --> RecSvc : usuario
+deactivate UsuarioRepo
+
+RecSvc -> RecSvc : gerarTokenRecuperacao(userId)
+activate RecSvc
+RecSvc --> RecSvc : token(uuid, expiracao: 1h)
+deactivate RecSvc
+
+RecSvc -> TokenRepo : salvarTokenRecuperacao(userId, token, expiracao)
+activate TokenRepo
+TokenRepo -> BD : INSERT INTO tokens_recuperacao (...)
+activate BD
+BD --> TokenRepo : salvo
+deactivate BD
+TokenRepo --> RecSvc : ok
+deactivate TokenRepo
+
+RecSvc ->> EmailSvc : enviarEmailRecuperacao(email, token, linkRedefinicao)
+activate EmailSvc
+note right of EmailSvc : Envio assíncrono\npara não bloquear resposta
+EmailSvc --> RecSvc : emailEnviado
+deactivate EmailSvc
+
+RecSvc --> AuthCtrl : solicitacaoRegistrada
+deactivate RecSvc
+
+AuthCtrl --> UI : HTTP 200 OK\n{ mensagem: "E-mail enviado se conta existir" }
+deactivate AuthCtrl
+UI --> Usuario : exibirMensagem("Verifique sua caixa de e-mail")
+deactivate UI
+
+== Etapa 2: Redefinição de Senha ==
+
+Usuario -> UI : acessarLinkRedefinicao(token)
+activate UI
+
+UI -> AuthCtrl : GET /api/auth/redefinir-senha?token=...
+activate AuthCtrl
+
+AuthCtrl -> RecSvc : validarToken(token)
+activate RecSvc
+RecSvc -> TokenRepo : buscarToken(token)
+activate TokenRepo
+TokenRepo -> BD : SELECT * FROM tokens_recuperacao WHERE token = ?
+activate BD
+BD --> TokenRepo : dadosToken
+deactivate BD
+TokenRepo --> RecSvc : token(userId, expiracao)
+deactivate TokenRepo
+RecSvc --> AuthCtrl : tokenValido
+deactivate RecSvc
+
+AuthCtrl --> UI : HTTP 200 OK
+deactivate AuthCtrl
+UI --> Usuario : exibirFormularioNovaSenha()
+deactivate UI
+
+Usuario -> UI : informarNovaSenha(novaSenha, confirmacao)
+activate UI
+
+UI -> AuthCtrl : POST /api/auth/redefinir-senha(token, novaSenha)
+activate AuthCtrl
+
+AuthCtrl -> RecSvc : redefinirSenha(token, novaSenha)
+activate RecSvc
+
+RecSvc -> RecSvc : hashNovaSenha(novaSenha)
+activate RecSvc
+RecSvc --> RecSvc : senhaHash
+deactivate RecSvc
+
+RecSvc -> UsuarioRepo : atualizarSenha(userId, senhaHash)
+activate UsuarioRepo
+UsuarioRepo -> BD : UPDATE usuarios SET senha_hash = ? WHERE id = ?
+activate BD
+BD --> UsuarioRepo : atualizado
+deactivate BD
+UsuarioRepo --> RecSvc : ok
+deactivate UsuarioRepo
+
+RecSvc -> TokenRepo : invalidarToken(token)
+activate TokenRepo
+TokenRepo -> BD : DELETE FROM tokens_recuperacao WHERE token = ?
+activate BD
+BD --> TokenRepo : deletado
+deactivate BD
+TokenRepo --> RecSvc : ok
+deactivate TokenRepo
+
+RecSvc --> AuthCtrl : senhaRedefinida
+deactivate RecSvc
+
+AuthCtrl --> UI : HTTP 200 OK\n{ mensagem: "Senha redefinida com sucesso" }
+deactivate AuthCtrl
+UI --> Usuario : exibirMensagem("Senha redefinida! Faça login.")
+deactivate UI
+
+@enduml

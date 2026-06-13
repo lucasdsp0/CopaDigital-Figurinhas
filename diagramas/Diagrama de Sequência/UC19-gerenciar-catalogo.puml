@@ -1,0 +1,107 @@
+@startuml UC19-gerenciar-catalogo
+title UC-19: Gerenciar Catálogo de Figurinhas (Admin)\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Administrador" as Admin
+participant "Painel\nAdministrativo" as AdminUI
+participant "AdminController" as AdminCtrl
+participant "AdminAuthMiddleware" as AdminMW
+participant "CatalogoService" as CatSvc
+participant "StorageService" as StorageSvc
+participant "FigurinhaRepository" as FigRepo
+participant "CacheService" as Cache
+database "Banco de Dados" as BD
+
+Admin -> AdminUI : acessarGerenciamentoCatalogo()
+activate AdminUI
+AdminUI -> AdminCtrl : GET /admin/api/figurinhas
+activate AdminCtrl
+AdminCtrl -> AdminMW : verificarPermissaoAdmin(jwtToken)
+activate AdminMW
+AdminMW --> AdminCtrl : adminAutenticado(adminId)
+deactivate AdminMW
+AdminCtrl -> CatSvc : listarTodasFigurinhas(pagina, filtros)
+activate CatSvc
+CatSvc -> FigRepo : findAll(pagina, filtros)
+activate FigRepo
+FigRepo -> BD : SELECT f.*, s.nome AS selecao,\n  j.nome AS jogador\nFROM figurinhas f\nJOIN jogadores j ON j.id=f.jogador_id\nJOIN selecoes s ON s.id=j.selecao_id\nORDER BY s.nome, f.numero\nLIMIT ? OFFSET ?
+activate BD
+BD --> FigRepo : figurinhas
+deactivate BD
+FigRepo --> CatSvc : figurinhas
+deactivate FigRepo
+CatSvc --> AdminCtrl : catalogo
+deactivate CatSvc
+AdminCtrl --> AdminUI : HTTP 200 OK { figurinhas, total }
+deactivate AdminCtrl
+AdminUI --> Admin : exibirCatalogo(figurinhas)
+deactivate AdminUI
+
+== Cadastrar Nova Figurinha ==
+
+Admin -> AdminUI : clicarNovaFigurinha()
+activate AdminUI
+AdminUI --> Admin : exibirFormularioFigurinha()
+deactivate AdminUI
+
+Admin -> AdminUI : preencherDadosFigurinha(\n  jogadorId, numero, raridade,\n  tipo, imagem)
+activate AdminUI
+
+AdminUI -> AdminCtrl : POST /admin/api/figurinhas\n{ dadosFigurinha, imagem }
+activate AdminCtrl
+
+AdminCtrl -> AdminMW : verificarPermissaoAdmin(jwtToken)
+activate AdminMW
+AdminMW --> AdminCtrl : ok
+deactivate AdminMW
+
+AdminCtrl -> StorageSvc : uploadImagemFigurinha(imagem)
+activate StorageSvc
+StorageSvc --> AdminCtrl : urlImagem
+deactivate StorageSvc
+
+AdminCtrl -> CatSvc : cadastrarFigurinha(\n  dadosFigurinha, urlImagem)
+activate CatSvc
+
+CatSvc -> CatSvc : validarDados(dadosFigurinha)
+activate CatSvc
+CatSvc --> CatSvc : dadosValidos: true
+deactivate CatSvc
+
+CatSvc -> FigRepo : salvar(novaFigurinha)
+activate FigRepo
+FigRepo -> BD : INSERT INTO figurinhas\n(jogador_id, numero, raridade, tipo,\n imagem_url, ativo)\nVALUES (?, ?, ?, ?, ?, true)
+activate BD
+BD --> FigRepo : figurinhaId
+deactivate BD
+FigRepo --> CatSvc : figurinhaCriada
+deactivate FigRepo
+
+CatSvc ->> Cache : invalidarCacheCatalogo()
+activate Cache
+Cache --> CatSvc : ok
+deactivate Cache
+
+CatSvc --> AdminCtrl : figurinhaCadastrada(figurinhaId)
+deactivate CatSvc
+
+AdminCtrl --> AdminUI : HTTP 201 Created\n{ figurinhaId, mensagem: "Criada com sucesso" }
+deactivate AdminCtrl
+AdminUI --> Admin : exibirSucesso("Figurinha cadastrada!")
+deactivate AdminUI
+
+@enduml

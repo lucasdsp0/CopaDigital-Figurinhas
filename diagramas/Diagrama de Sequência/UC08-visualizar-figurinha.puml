@@ -1,0 +1,89 @@
+@startuml UC08-visualizar-figurinha
+title UC-08: Visualizar Figurinha Detalhada\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "FigurinhaController" as FigCtrl
+participant "AuthMiddleware" as AuthMW
+participant "FigurinhaService" as FigSvc
+participant "CacheService" as Cache
+participant "FigurinhaRepository" as FigRepo
+participant "EstatisticaService" as EstatSvc
+database "Banco de Dados" as BD
+
+Usuario -> UI : clicarFigurinha(figurinhaId)
+activate UI
+
+UI -> FigCtrl : GET /api/figurinhas/{figurinhaId}
+activate FigCtrl
+
+FigCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> FigCtrl : tokenValido(userId)
+deactivate AuthMW
+
+FigCtrl -> Cache : buscarFigurinhaCache(figurinhaId)
+activate Cache
+Cache --> FigCtrl : cacheMiss
+deactivate Cache
+
+FigCtrl -> FigSvc : buscarDetalhes(figurinhaId, userId)
+activate FigSvc
+
+FigSvc -> FigRepo : findById(figurinhaId)
+activate FigRepo
+FigRepo -> BD : SELECT f.*, j.nome, j.pais, j.posicao,\n  j.clube, s.nome AS selecao\nFROM figurinhas f\nJOIN jogadores j ON j.id = f.jogador_id\nJOIN selecoes s ON s.id = j.selecao_id\nWHERE f.id = ?
+activate BD
+BD --> FigRepo : dadosFigurinha
+deactivate BD
+FigRepo --> FigSvc : figurinha
+deactivate FigRepo
+
+FigSvc -> FigRepo : verificarPosse(userId, figurinhaId)
+activate FigRepo
+FigRepo -> BD : SELECT quantidade, colada\nFROM usuario_figurinhas\nWHERE usuario_id=? AND figurinha_id=?
+activate BD
+BD --> FigRepo : { quantidade: 2, colada: true }
+deactivate BD
+FigRepo --> FigSvc : posseUsuario
+deactivate FigRepo
+
+FigSvc -> EstatSvc : buscarEstatisticasJogador(jogadorId)
+activate EstatSvc
+EstatSvc -> BD : SELECT gols, assistencias, jogos,\n  media_nota FROM estatisticas_copa\nWHERE jogador_id = ?
+activate BD
+BD --> EstatSvc : estatisticas
+deactivate BD
+EstatSvc --> FigSvc : estatisticas
+deactivate EstatSvc
+
+FigSvc --> FigCtrl : detalheFigurinha\n{ figurinha, posseUsuario, estatisticas }
+deactivate FigSvc
+
+FigCtrl -> Cache : salvarCache(figurinhaId, detalhe, ttl:600s)
+activate Cache
+Cache --> FigCtrl : ok
+deactivate Cache
+
+FigCtrl --> UI : HTTP 200 OK\n{ figurinha, estatisticas, posseUsuario }
+deactivate FigCtrl
+
+UI --> Usuario : exibirModalDetalheFigurinha(\n  foto, raridade, estatisticas, posseUsuario)
+deactivate UI
+
+@enduml

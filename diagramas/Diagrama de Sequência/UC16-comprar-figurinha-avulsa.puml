@@ -1,0 +1,113 @@
+@startuml UC16-comprar-figurinha-avulsa
+title UC-16: Comprar Figurinha Avulsa\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário\n(Comprador)" as Comprador
+participant "Interface\nWeb/Mobile" as UI
+participant "MarketplaceController" as MktCtrl
+participant "AuthMiddleware" as AuthMW
+participant "CompraAvulsaService" as CompraSvc
+participant "PagamentoService" as PagtoSvc
+participant "UsuarioFigurinhaRepo" as UsFigRepo
+participant "OfertaRepository" as OfertaRepo
+participant "NotificacaoService" as NotifSvc
+participant "API Pagamento\n(Gateway)" as GatewayPgto
+database "Banco de Dados" as BD
+
+Comprador -> UI : clicarComprarFigurinha(anuncioId)
+activate UI
+
+UI -> MktCtrl : GET /api/marketplace/anuncios/{anuncioId}
+activate MktCtrl
+MktCtrl -> OfertaRepo : buscarAnuncio(anuncioId)
+activate OfertaRepo
+OfertaRepo -> BD : SELECT o.*, f.nome, f.raridade,\n  u.nome AS vendedor\nFROM ofertas_marketplace o\nJOIN figurinhas f ON f.id = o.figurinha_id\nJOIN usuarios u ON u.id = o.vendedor_id\nWHERE o.id=? AND o.status='ativa'
+activate BD
+BD --> OfertaRepo : anuncio
+deactivate BD
+OfertaRepo --> MktCtrl : anuncio
+deactivate OfertaRepo
+MktCtrl --> UI : HTTP 200 OK { anuncio }
+deactivate MktCtrl
+UI --> Comprador : exibirDetalheAnuncio(anuncio)
+deactivate UI
+
+Comprador -> UI : confirmarCompra(anuncioId, metodoPagamento)
+activate UI
+
+UI -> MktCtrl : POST /api/marketplace/comprar\n{ anuncioId, metodoPagamento }
+activate MktCtrl
+
+MktCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> MktCtrl : tokenValido(compradorId)
+deactivate AuthMW
+
+MktCtrl -> CompraSvc : processarCompra(\n  compradorId, anuncioId, metodoPagamento)
+activate CompraSvc
+
+CompraSvc -> OfertaRepo : bloquearAnuncio(anuncioId)
+activate OfertaRepo
+OfertaRepo -> BD : UPDATE ofertas_marketplace\nSET status='reservado'\nWHERE id=? AND status='ativa'
+activate BD
+BD --> OfertaRepo : linhasAfetadas: 1
+deactivate BD
+OfertaRepo --> CompraSvc : anuncioBloqueado
+deactivate OfertaRepo
+
+CompraSvc -> PagtoSvc : cobrar(\n  compradorId, valor, metodoPagamento)
+activate PagtoSvc
+PagtoSvc -> GatewayPgto : POST /charges { valor, metodo }
+activate GatewayPgto
+GatewayPgto --> PagtoSvc : { status:"aprovado", transacaoId }
+deactivate GatewayPgto
+PagtoSvc --> CompraSvc : pagamentoAprovado(transacaoId)
+deactivate PagtoSvc
+
+CompraSvc -> UsFigRepo : transferirFigurinha(\n  deVendedorParaComprador:\n  vendedorId → compradorId, figurinhaId)
+activate UsFigRepo
+UsFigRepo -> BD : BEGIN TRANSACTION;\nDELETE FROM usuario_figurinhas\n  WHERE usuario_id=vendedor AND figurinha_id=fig;\nINSERT INTO usuario_figurinhas (comprador, fig, qtd:1);\nCOMMIT;
+activate BD
+BD --> UsFigRepo : ok
+deactivate BD
+UsFigRepo --> CompraSvc : transferenciaConcluida
+deactivate UsFigRepo
+
+CompraSvc -> OfertaRepo : encerrarAnuncio(anuncioId, transacaoId)
+activate OfertaRepo
+OfertaRepo -> BD : UPDATE ofertas_marketplace\nSET status='vendido', vendido_em=NOW()
+activate BD
+BD --> OfertaRepo : ok
+deactivate BD
+OfertaRepo --> CompraSvc : ok
+deactivate OfertaRepo
+
+CompraSvc ->> NotifSvc : notificarVendedor(\n  vendedorId, "Sua figurinha foi vendida!")
+activate NotifSvc
+NotifSvc --> CompraSvc : ok
+deactivate NotifSvc
+
+CompraSvc --> MktCtrl : compraConcluida(figurinha)
+deactivate CompraSvc
+
+MktCtrl --> UI : HTTP 200 OK\n{ mensagem: "Figurinha adquirida!", figurinha }
+deactivate MktCtrl
+
+UI --> Comprador : exibirSucesso(\n"Figurinha adicionada ao seu álbum!")
+deactivate UI
+
+@enduml

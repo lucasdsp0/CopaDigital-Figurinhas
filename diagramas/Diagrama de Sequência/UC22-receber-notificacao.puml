@@ -1,0 +1,130 @@
+@startuml UC22-receber-notificacao
+title UC-22: Receber Notificação de Troca / Oferta\nSistema FigurinhasCopa Digital
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #2C3E50
+  ActorBorderColor #2C3E50
+  ActorBackgroundColor #D5E8D4
+  LifeLineBorderColor #2980B9
+  LifeLineBackgroundColor #EBF5FB
+  ParticipantBorderColor #2980B9
+  ParticipantBackgroundColor #EBF5FB
+  BoxBackgroundColor #F2F3F4
+  BoxBorderColor #BDC3C7
+}
+
+actor "Usuário" as Usuario
+participant "Interface\nWeb/Mobile" as UI
+participant "NotificacaoController" as NotifCtrl
+participant "AuthMiddleware" as AuthMW
+participant "NotificacaoService" as NotifSvc
+participant "WebSocketServer" as WSServer
+participant "NotificacaoRepository" as NotifRepo
+participant "EmailService" as EmailSvc
+participant "PushService" as PushSvc
+database "Banco de Dados" as BD
+
+== Canal em Tempo Real (WebSocket) ==
+
+Usuario -> UI : abrirAplicacao()
+activate UI
+UI -> WSServer : conectar(jwtToken)
+activate WSServer
+WSServer --> UI : conexaoEstabelecida(socketId)
+deactivate WSServer
+note right of UI : Conexão persistente\nmantida enquanto app aberto
+
+== Evento: Nova Proposta Recebida (Assíncrono) ==
+
+[-> NotifSvc : eventoNovaProposta(\n  destinatarioId, propostaId, tipo)
+activate NotifSvc
+
+NotifSvc -> NotifRepo : salvarNotificacao(\n  destinatarioId, tipo:"NOVA_PROPOSTA",\n  payload: { propostaId })
+activate NotifRepo
+NotifRepo -> BD : INSERT INTO notificacoes\n(usuario_id, tipo, payload, lida, criado_em)\nVALUES (?, 'NOVA_PROPOSTA', ?, false, NOW())
+activate BD
+BD --> NotifRepo : notificacaoId
+deactivate BD
+NotifRepo --> NotifSvc : notificacaoSalva
+deactivate NotifRepo
+
+NotifSvc ->> WSServer : emitirEvento(\n  destinatarioId,\n  "nova_notificacao",\n  { tipo, mensagem, propostaId })
+activate WSServer
+WSServer ->> UI : push("nova_notificacao", payload)
+note right of WSServer : Entrega imediata\nse usuário online
+WSServer --> NotifSvc : emitido
+deactivate WSServer
+
+NotifSvc ->> EmailSvc : enviarEmailNotificacao(\n  email, "Nova proposta de troca!")
+activate EmailSvc
+EmailSvc --> NotifSvc : ok
+deactivate EmailSvc
+
+NotifSvc ->> PushSvc : enviarPushNotification(\n  deviceToken, titulo, corpo)
+activate PushSvc
+PushSvc --> NotifSvc : ok
+deactivate PushSvc
+
+deactivate NotifSvc
+
+UI --> Usuario : exibirBadgeNotificacao(contador++)
+deactivate UI
+
+== Usuário lê as notificações ==
+
+Usuario -> UI : clicarSinoNotificacoes()
+activate UI
+
+UI -> NotifCtrl : GET /api/notificacoes?lida=false
+activate NotifCtrl
+
+NotifCtrl -> AuthMW : verificarToken(jwtToken)
+activate AuthMW
+AuthMW --> NotifCtrl : tokenValido(userId)
+deactivate AuthMW
+
+NotifCtrl -> NotifSvc : listarNaoLidas(userId)
+activate NotifSvc
+NotifSvc -> NotifRepo : findByUsuarioIdAndLida(userId, false)
+activate NotifRepo
+NotifRepo -> BD : SELECT * FROM notificacoes\nWHERE usuario_id=? AND lida=false\nORDER BY criado_em DESC
+activate BD
+BD --> NotifRepo : notificacoes
+deactivate BD
+NotifRepo --> NotifSvc : notificacoes
+deactivate NotifSvc
+deactivate NotifRepo
+NotifSvc --> NotifCtrl : notificacoes
+deactivate NotifSvc
+NotifCtrl --> UI : HTTP 200 OK { notificacoes }
+deactivate NotifCtrl
+UI --> Usuario : exibirListaNotificacoes(notificacoes)
+deactivate UI
+
+== Marcar como lida ==
+
+Usuario -> UI : clicarNotificacao(notificacaoId)
+activate UI
+UI -> NotifCtrl : PUT /api/notificacoes/{id}/lida
+activate NotifCtrl
+NotifCtrl -> NotifSvc : marcarComoLida(userId, notificacaoId)
+activate NotifSvc
+NotifSvc -> NotifRepo : update(notificacaoId, lida:true)
+activate NotifRepo
+NotifRepo -> BD : UPDATE notificacoes SET lida=true WHERE id=?
+activate BD
+BD --> NotifRepo : ok
+deactivate BD
+NotifRepo --> NotifSvc : ok
+deactivate NotifRepo
+NotifSvc --> NotifCtrl : ok
+deactivate NotifSvc
+NotifCtrl --> UI : HTTP 200 OK
+deactivate NotifCtrl
+UI --> Usuario : redirecionarParaContexto(notificacao)
+deactivate UI
+
+@enduml
